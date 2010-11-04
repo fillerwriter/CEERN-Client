@@ -1,0 +1,379 @@
+<?php
+
+/**
+ * Implements hook_menu()
+ */
+
+function ceenclient_menu () {
+  $items = array();
+  
+  $items['admin/settings/ceen'] = array(
+    'title'             => 'CEEN',
+    'description'       => 'CEEN settings.',
+    'access arguments'  => array('administer site configuration'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ceenclient_admin_settings'),
+  );
+  
+  return $items;
+}
+
+function ceenclient_admin_settings() {
+  $form = array();
+  
+  $form['ceenclient_service_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('CEEN Service URL'),
+    '#default_value' => variable_get('ceenclient_service_url', ''),
+  );
+  
+  $form['ceenclient_service_public_key'] = array(
+    '#type' => 'textfield',
+    '#title' => t('CEEN Public Key'),
+    '#default_value' => variable_get('ceenclient_service_public_key', ''),
+  );
+  
+  $form['ceenclient_service_private_key'] = array(
+    '#type' => 'textfield',
+    '#title' => t('CEEN Private Key'),
+    '#default_value' => variable_get('ceenclient_service_private_key', ''),
+  );
+  
+  return system_settings_form($form);
+}
+
+/**
+ * Implementation of hook_user().
+ */
+ 
+function ceenclient_user($op, &$edit, &$account, $category = NULL) {
+  if ($op == 'insert' || $op == 'update') {
+    /**
+     * TODO: Not sure if this will work once we get content_profile involved, but for now it should.
+     */
+    $to_api = (array) $account;
+    $to_api = array_merge($to_api, $edit);
+    unset($to_api['pass']);
+    $to_api = (object) $to_api;
+    ceenclient_save_user($to_api);
+  } else if ($op == 'delete') {
+    ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/user/' . $account->ceen_uuid, NULL, 'DELETE');
+  } else if ($op == 'load') {
+    $account->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $account->uid));
+  }
+}
+
+/**
+* Implementation of hook_views_api().
+* @return Array with Views API version.
+*/
+function ceenclient_views_api() {
+  return array('api' => 2.0);
+}
+
+/**
+ * Takes a node object, send it to CEEN.
+ */
+ 
+function ceenclient_save_node($node) {
+  global $base_url;
+  
+  // Since we're storing our data in a feature, save what we can vanilla, check for other module presence, then add rest of data to object.
+  $resource = array(
+    'title' => $node->title,
+  	'description' => $node->body,
+  	'canonical_url' => $base_url . 'node/' . $node->nid,
+  	'user' => ceenclient_user_uuid($node->uid),
+  	'fair_usage' => TRUE, // We default to TRUE when we're not using the feature.
+  );
+
+  if (module_exists('ygo_event') && $node->type == 'event') {
+    $resource_additions = array(
+      'type' => 'Events',
+      'time' => array(
+        'start' => $node->field_event_time[0]['value'],
+  		  'end' => $node->field_event_time[0]['value2'],
+      ),
+      'location' => array(
+  		  'name' => $node->field_event_location[0]['name'],
+  		  'street' => $node->field_event_location[0]['street'],
+  		  'additional' => $node->field_event_location[0]['additional'],
+  		  'city' => $node->field_event_location[0]['city'],
+  		  'state' => $node->field_event_location[0]['province'],
+  		  'zip' => $node->field_event_location[0]['postal_code'],
+  	  ),
+  	  'contact' => array( 
+  		  'name' => $node->field_contact_name[0]['value'],
+  		  'email' => $node->field_contact_email[0]['email'],
+  		  'url' => $node->field_contact_website[0]['url'],
+  		  'phone' => $node->field_contact_phone[0]['value'],
+  	  ),
+    );
+    
+    $resource = array_merge($resource, $resource_additions);
+  }
+
+  if (module_exists('ceern_resource_feature') && $node->type == 'ceen_resource') {
+    $resource_additions = array(
+  	  'type' => $node->field_resource_type[0]['value'],
+  	  'time' => array(
+  	    'start' => $node->field_time[0]['value'],
+  		  'end' => $node->field_time[0]['value2'],
+  	  ),
+  	  'prerequisites' => $node->field_prerequisites[0]['value'],
+  	  'location' => array(
+  		  'name' => $node->field_location[0]['name'],
+  		  'street' => $node->field_location[0]['street'],
+  		  'additional' => $node->field_location[0]['additional'],
+  		  'city' => $node->field_location[0]['city'],
+  		  'state' => $node->field_location[0]['province'],
+  		  'zip' => $node->field_location[0]['postal_code'],
+  	  ),
+  	  'language' => $node->field_lang[0]['value'],
+  	  'contact' => array( 
+  		  'name' => $node->field_contact_name[0]['value'],
+  		  'email' => $node->field_contact_email[0]['email'],
+  		  'url' => $node->field_contact_website[0]['url'],
+  		  'phone' => $node->field_contact_phone[0]['value'],
+  	  ),
+  	  'education_continuum' => $field_edu_continuum[0]['value'],
+  	  'fair_usage' => $node->field_fair_usage[0]['value'],
+  	);
+  	
+  	$participant_types = array();
+  	
+  	foreach($node->field_participant_type as $participant_type) {
+      $participant_types[] = $participant_type['value'];
+  	}
+  	
+  	$resource_additions['participant_type'] = $participant_types;
+  	
+  	$links = array();
+  	
+  	foreach($node->field_links as $link) {
+      $links[] = array(
+        'url' => $link['url'],
+        'title' => $link['title'],
+      );
+  	}
+  	
+  	$resource_additions['participant_type'] = $participant_types;
+  
+    $resource = array_merge($resource, $resource_additions);
+  }
+  
+  $connection_type = 'POST';
+  
+  if ($node->is_new == FALSE) {
+    $resource['uuid'] = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "node"', $node->nid));
+    $connection_type = 'PUT';
+  }
+  
+  $return = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $resource, $connection_type);
+    
+  // update or add uuid to our table.
+  $ceen_data = array('oid' => $node->nid, 'object' => 'node', 'uuid' => $return->uuid);
+  $update = array();
+  
+  if ($node->is_new == FALSE && $resource['uuid']) {
+    $update = 'oid';
+    unset($ceen_data['oid']);
+  }
+    
+  $returnData = drupal_write_record('ceenapi_to_object', $ceen_data, $update);
+  
+  return $return;
+}
+
+/**
+ * Takes a user, saves it to API.
+ */
+ 
+function ceenclient_save_user($account) {
+  /**
+   * TODO: Use Content Profile for extra data about our users.
+   */
+  $api_user_object = array(
+    'first_name' => $account->name,
+    'last_name' => " ",
+    'contact' => array(
+      'mail' => $account->mail,
+    ), 
+  );
+  
+  $resource_url = '/user';
+  $resource_call_type = 'POST';
+    
+  if ($account->ceen_uuid) {
+    $resource_url .= "/" . $account->ceen_uuid;
+    $resource_call_type = 'PUT';
+  }
+  
+  $return = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . $resource_url, $api_user_object, $resource_call_type);
+  
+  if (!$return) {
+    drupal_set_message(t("Error saving user to CEERN API", 'error'));
+  } else {
+    $update = array();
+  
+    $ceen_data = array('oid' => $account->uid, 'object' => 'user', 'uuid' => $return->uuid);
+  
+    if ($account->ceen_uuid != NULL) {
+      $update = 'oid';
+      unset($ceen_data['oid']);
+    }
+    
+    drupal_write_record('ceenapi_to_object', $ceen_data, $update);
+  }
+}
+
+/**
+ * Requests data from CEEN. Adds authentication automatically.
+ *
+ * @param $uri
+ *   URI of request. http://example.com/services/rest/resource/1
+ * @param $params
+ *   Keyed array of parameters to add to uri.
+ *
+ * @return
+ *   A data object from CEEN.
+ */
+
+function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
+  watchdog('CEERN Debugging', 'API Call ' . $method . ' ' . $uri);
+  $public_key = variable_get('ceenclient_service_public_key', '');
+  $private_key = variable_get('ceenclient_service_private_key', '');
+  $nonce = uniqid(mt_rand());
+  $timestamp = time();
+  
+  $hash_parameters = array($timestamp, $public_key, $nonce);
+  $hash = hash_hmac("sha256", implode(';', $hash_parameters), $private_key);
+  
+  $url_args = array();
+  $data = NULL;
+  
+  if (strtoupper($method) == 'GET') {
+    $url_args += $params;
+  } else {
+    $data = serialize($params);
+  }
+  
+  $url_args['hash'] = $hash;
+  $url_args['timestamp'] = $timestamp;
+  $url_args['public_key'] = $public_key;
+  $url_args['nonce'] = $nonce;
+  
+  $headers = array(
+    'Content-Type' => 'application/vnd.php.serialized',
+    'Accept' => 'application/vnd.php.serialized',
+  );
+  
+  // Automatically add .php to end of uri to ensure data comes back in expected format.
+  $request = drupal_http_request($uri . '.php?' . drupal_query_string_encode($url_args), $headers, strtoupper($method), $data);
+  return unserialize($request->data);
+}
+
+/**
+ * Implementation of hook_cron().
+ */
+ 
+function ceenclient_cron() {
+
+}
+
+/**
+ * Implementation of hook_action_info().
+ */
+ 
+function ceenclient_action_info() {
+  return array(
+    'ceenclient_save_to_api_action' => array(
+      'description' => t('Save Resource to CEERN API.'),
+      'type' => 'node',
+      'configurable' => FALSE,
+      'hooks' => array(
+        'nodeapi' => array('insert', 'update'),
+      ),
+    ),
+    'ceenclient_remove_from_api_action' => array(
+      'description' => t('Remove resources from CEERN API.'),
+      'type' => 'node',
+      'configurable' => FALSE,
+      'hooks' => array(
+        'nodeapi' => array('update', 'delete'),
+      ),
+    ),
+    'ceenclient_save_user_to_api_action' => array(
+      'description' => t('Save Users to CEERN API.'),
+      'type' => 'user',
+      'configurable' => FALSE,
+      'hooks' => array(
+        'nodeapi' => array('insert', 'update'),
+      ),
+    ),
+    'ceenclient_remove_user_from_api_action' => array(
+      'description' => t('Remove users from CEERN API.'),
+      'type' => 'user',
+      'configurable' => FALSE,
+      'hooks' => array(
+        'nodeapi' => array('update', 'delete'),
+      ),
+    ),
+  );
+}
+
+/**
+ * Action for saving to api.
+ */
+ 
+function ceenclient_save_to_api_action(&$object, $context = array()) {
+  if ($object->nid) {
+    $resource = node_load($object->nid);
+    
+    ceenclient_save_node($resource);
+  }
+}
+
+/**
+ * Action for removing from api.
+ * TODO: Implement ceenclient_remove_from_api_action.
+ */
+ 
+function ceenclient_remove_from_api_action(&$object, $context = array()) {
+
+}
+
+/**
+ * Action for saving user to api.
+ */
+
+function ceenclient_save_user_to_api_action(&$object, $context = array()) {
+  if ($object->uid) {
+    $account = user_load($object->uid);
+    
+    ceenclient_save_user($account);
+  }
+}
+
+/**
+ * Action for removing user from api.
+ * TODO: Implement ceenclient_remove_user_from_api_action.
+ */
+ 
+function ceenclient_remove_user_from_api_action(&$object, $context = array()) {
+
+}
+
+/**
+ * Retrieves ceern uuid for a user. If nothing's passed in, default to current user.
+ */
+ 
+function ceenclient_user_uuid($uid = -1) {
+  global $user;
+  
+  if ($uid < 0) {
+    $uid = $user->uid;
+  }
+  
+  return db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $uid));
+}

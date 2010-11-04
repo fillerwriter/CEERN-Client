@@ -1,0 +1,9 @@
+; $Id$
+name = CEEN Client
+description = "CEEN client implementation"
+
+; Required core version (Drupal 6+; no effect in Drupal 5)
+core = 6.x
+
+; PHP version requirement (Drupal 6+)
+php = 5.2

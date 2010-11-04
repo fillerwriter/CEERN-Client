@@ -1,0 +1,42 @@
+<?php
+
+/**
+ * Implementation of hook_schema().
+ */
+ 
+function ceenclient_schema() {
+  $schema['ceenapi_to_object'] = array(
+    'description' => 'Connects nodes to UUIDs from CEEN API.',
+    'fields' => array(
+      'oid' => array(
+        'description' => 'The primary identifier for the object.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'object' => array(
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Database object.',
+      ),
+      'uuid' => array(
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The Universally Unique Identifier from CEERN API.',
+      ),
+    ),
+  );
+  return $schema;
+}
+
+function ceenclient_install() {
+  drupal_install_schema('ceenclient');
+}
+
+function ceenclient_uninstall() {
+  drupal_uninstall_schema('ceenclient');
+}
