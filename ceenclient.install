@@ -29,6 +29,11 @@ function ceenclient_schema() {
         'description' => 'The Universally Unique Identifier from CEERN API.',
       ),
     ),
+    'indexes' => array(
+      'oid'        => array('oid'),
+      'object'        => array('object'),
+      'uuid'        => array('uuid'),
+    )
   );
   return $schema;
 }

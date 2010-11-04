@@ -15,6 +15,10 @@ function ceenclient_menu () {
     'page arguments' => array('ceenclient_admin_settings'),
   );
   
+  /*$items['admin/settings/ceen/mapping'] = array(
+  
+  );*/
+  
   return $items;
 }
 
@@ -73,6 +77,10 @@ function ceenclient_views_api() {
 
 /**
  * Takes a node object, send it to CEEN.
+ *
+ * @param object node
+ *   the node object
+ * TODO: remove module specific code, make mapping generic.
  */
  
 function ceenclient_save_node($node) {
