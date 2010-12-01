@@ -180,7 +180,9 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
   switch ($op) {
     case 'insert':
     case 'update':
-      ceenclient_save_node($node);
+      if (variable_get('ceern_save_to_api_'. $node->type, FALSE) != FALSE) {
+        ceenclient_save_node($node);
+      }
     break;
   }
 }
@@ -273,11 +275,11 @@ function ceenclient_save_node($node) {
     
   } else {
     // Since we're storing our data in a feature, save what we can vanilla, check for other module presence, then add rest of data to object.
-    $resource = array(
+    $resource = array_merge($resource, array(
       'title' => $node->title,
     	'description' => $node->body,
     	'fair_usage' => TRUE, // We default to TRUE when we're not using the feature.
-    );
+    ));
   
     if (module_exists('ygo_event') && $node->type == 'event') {
       $resource_additions = array(
@@ -363,10 +365,12 @@ function ceenclient_save_node($node) {
   }
     
   $return = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $resource, $connection_type);
-    
-  if (isset($return['errors'])) {
-    for($i = 0; $i < count($return['errors']); $i++) {
-      drupal_set_message($return['errors'][$i], 'error');
+  
+  $return = (object) $return;
+  
+  if (isset($return->errors)) {
+    for($i = 0; $i < count($return->errors); $i++) {
+      drupal_set_message($return->errors[$i], 'error');
     }
   } else {
     // update or add uuid to our table.
