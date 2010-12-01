@@ -271,7 +271,7 @@ function ceenclient_save_node($node) {
       }
     }
     
-    $resource['type'] = $node['resource_type'];
+    $resource['type'] = $node_array['resource_type'];
     
   } else {
     // Since we're storing our data in a feature, save what we can vanilla, check for other module presence, then add rest of data to object.
@@ -443,7 +443,7 @@ function ceenclient_save_user($account) {
  */
 
 function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
-  watchdog('CEERN Debugging', 'API Call ' . $method . ' ' . $uri);
+  watchdog('CEERN Debugging', 'API Call ' . $method . ' ' . $uri, array(), WATCHDOG_DEBUG);
   $public_key = variable_get('ceenclient_service_public_key', '');
   $private_key = variable_get('ceenclient_service_private_key', '');
   $nonce = uniqid(mt_rand());
@@ -473,6 +473,7 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
   
   // Automatically add .php to end of uri to ensure data comes back in expected format.
   $request = drupal_http_request($uri . '.php?' . drupal_query_string_encode($url_args), $headers, strtoupper($method), $data);
+  watchdog('CEERN Debugging', 'API Return <pre>' . $request . '</pre>', array(), WATCHDOG_DEBUG);
   return unserialize($request->data);
 }
 
