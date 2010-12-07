@@ -488,7 +488,7 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
  */
  
 function ceenclient_cron() {
-
+  ceenclient_load_updates();
 }
 
 /**
@@ -510,15 +510,13 @@ function ceenclient_load_updates() {
   
   $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', array('status' => 1, 'sort' => 'update', 'update' => $last_update));
   
-  $return = "LAST UPDATE " + $last_update;
+  //$return = "LAST UPDATE " . $last_update;
   
   foreach ($data['resources'] as $resource) {
     switch ($resource['status']) {
-      default:
-        // TMP, just to make sure we're actually loading valid info.
-        // @TODO: Incorporate mapping and whatnot.
+      case 'PUBLISHED':
         $resource_data = ceenclient_resource_call($resource['uri']);
-        $return .= kpr($resource_data, true);
+        //$return .= kpr($resource_data, true);
         
         if (is_array($resource_data)) {
           if (!db_result(db_query('SELECT oid FROM {ceenapi_to_object} WHERE uuid = "%s"', $resource_data['uuid']))) {
@@ -537,10 +535,20 @@ function ceenclient_load_updates() {
         
         variable_set('ceenclient_api_last_update', $resource_data['last_update']);
       break;
+      case 'UPDATED':
+      
+      break;
+      case 'DELETED':
+      
+      break;
+      default:
+        // TMP, just to make sure we're actually loading valid info.
+        // @TODO: Incorporate mapping and whatnot.
+      break;
     }
   }
   
-  return kpr($data, true) . $return;
+  //return kpr($data, true) . $return;
 }
 
 /**
