@@ -533,13 +533,15 @@ function ceenclient_load_updates() {
           }
         }
         
-        variable_set('ceenclient_api_last_update', $resource_data['last_update']);
+        variable_set('ceenclient_api_last_update', $resource['last_updated']);
       break;
       case 'UPDATED':
       
       break;
       case 'DELETED':
-      
+        $node = ceenclient_node_load_uuid($resource['uuid']);
+        node_delete($node->nid);
+        variable_set('ceenclient_api_last_update', $resource['last_updated']);
       break;
       default:
         // TMP, just to make sure we're actually loading valid info.
@@ -646,4 +648,13 @@ function ceenclient_user_uuid($uid = -1) {
   }
   
   return db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $uid));
+}
+
+/**
+ * Retrieves node based on uuid.
+ */
+ 
+function ceenclient_node_load_uuid($uuid) {
+  $nid = db_result(db_query('SELECT oid FROM {ceenapi_to_object} WHERE uuid = "%s" AND object = "node"', $uuid));
+  return node_load($nid);
 }
