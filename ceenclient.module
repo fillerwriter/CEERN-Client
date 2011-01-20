@@ -18,7 +18,7 @@ function ceenclient_menu () {
   $node_types = array_keys(node_get_types('types'));
   
   foreach ($node_types as $node_type) {
-    $items['admin/content/node-type/' . $node_type . '/ceern_mapping'] = array(
+    $items['admin/content/node-type/' . str_replace('_', '-', $node_type) . '/ceern_mapping'] = array(
       'title' => 'CEERN Data Mapping',
       'access callback' => 'ceenclient_mapping_access_callback',
       'access arguments' => array($node_type),
@@ -80,13 +80,6 @@ function ceenclient_mapping_form(&$form_state, $node_type) {
     '#type' => 'select',
     '#options' => $mapping_options,
     '#default_value' => isset($mapping['title']) ? $mapping['title'] : '<none>',
-  );
-  
-  $form['map_body'] = array(
-    '#title' => 'Node Body',
-    '#type' => 'select',
-    '#options' => $mapping_options,
-    '#default_value' => isset($mapping['body']) ? $mapping['body'] : '<none>',
   );
   
   $form['map_body'] = array(
