@@ -4,7 +4,7 @@
  * Implements hook_menu()
  */
 
-function ceenclient_menu () {
+function ceenclient_menu() {
   $items = array();
   
   $items['admin/settings/ceen'] = array(
@@ -60,6 +60,37 @@ function ceenclient_mapping_access_callback($node_type) {
   return variable_get('ceern_save_to_api_'. $node_type, 0);
 }
 
+function ceenclient_mapping_options() {
+  return array(
+    '<none>' => '<none>',
+    'title' => 'Title',
+    'description' => 'Description',
+    'type' => 'Resource Type',
+    'time_start' => 'Time Start',
+    'time_end' => 'Time End',
+    'managing_organization' => 'Managing Organization',
+    'prerequisites' => 'Prerequisites',
+    'location_name' => 'Location Name',
+    'location_street' => 'Location Street',
+    'location_additional' => 'Location Additional',
+    'location_city' => 'Location City',
+    'location_state' => 'Location State',
+    'location_zip' => 'Location Zip Code',
+    'location_country' => 'Location Country',
+    'language' => 'Language',
+    'contact_name' => 'Contact Name',
+    'contact_email' => 'Contact Email',
+    'contact_url' => 'Contact URL',
+    'contact_phone' => 'Contact Phone Number',
+    'education_standards' => 'Education Standards',
+    'grade_levels' => 'Grade Levels',
+    'education_continuum' => 'Education Continuum',
+    'participant_type' => 'Participant Type',
+    'links' => 'Links',
+    'files' => 'Files',
+  );
+}
+
 /**
  * Mapping form callback.
  */
@@ -67,13 +98,7 @@ function ceenclient_mapping_access_callback($node_type) {
 function ceenclient_mapping_form(&$form_state, $node_type) {  
   $mapping = variable_get('ceern_mapping_'. $node_type, array());
   
-  $mapping_options = array(
-    '<none>' => '<none>',
-    'title' => 'Title',
-    'description' => 'Description',
-    'time_start' => 'Time Start',
-    'time_end' => 'Time End',
-  );
+  $mapping_options = ceenclient_mapping_options();
   
   $form['map_title'] = array(
     '#title' => 'Node Title',
@@ -99,7 +124,7 @@ function ceenclient_mapping_form(&$form_state, $node_type) {
   if (module_exists('content')) {  
     $node_type_data = content_types($node_type);
     
-    foreach($node_type_data['fields'] as $field) {
+    foreach ($node_type_data['fields'] as $field) {
     
       $form['map_' . $field['field_name']] = array(
         '#title' => t($field['widget']['label']),
@@ -130,7 +155,7 @@ function ceenclient_mapping_form(&$form_state, $node_type) {
 function ceenclient_mapping_form_submit($form, &$form_state) {
   $mapping = array();
   
-  foreach($form_state['values'] as $key => $value) {
+  foreach ($form_state['values'] as $key => $value) {
     if (preg_match('/^map_/', $key)) {
       $item_name = preg_replace('/^map_/', '', $key);
       $mapping[$item_name] = $value;
@@ -178,9 +203,10 @@ function ceenclient_user($op, &$edit, &$account, $category = NULL) {
     unset($to_api['pass']);
     $to_api = (object) $to_api;
     ceenclient_save_user($to_api);
-  } else if ($op == 'delete') {
+  }
+  elseif ($op == 'delete') {
     ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/user/' . $account->ceen_uuid, NULL, 'DELETE');
-  } else if ($op == 'load') {
+  } elseif ($op == 'load') {
     $account->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $account->uid));
   }
 }
@@ -196,6 +222,9 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
       if (variable_get('ceern_save_to_api_'. $node->type, FALSE) != FALSE && empty($node->ceern_from_api)) {
         ceenclient_save_node($node);
       }
+    break;
+    case 'delete':
+    
     break;
   }
 }
@@ -225,7 +254,8 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
       '#description' => 'Should this content type be synced with the general API?',
       '#default_value' => variable_get('ceern_save_to_api_'. $form['#node_type']->type, 0),
     );
-  } else if (preg_match('/_node_form$/', $form_id)) {
+  }
+  else if (preg_match('/_node_form$/', $form_id)) {
     if (variable_get('ceern_save_to_api_'. $form['#node']->type, FALSE)) {
       $form['ceern_type'] = array(
         '#type' => 'fieldset',
@@ -403,6 +433,9 @@ function ceenclient_save_node($node) {
 
 /**
  * Takes a user, saves it to API.
+ *
+ * @param $account
+ *   User account object.
  */
  
 function ceenclient_save_user($account) {
@@ -456,7 +489,22 @@ function ceenclient_save_user($account) {
  */
 
 function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
+  static $ceenclient_api_calls;
   watchdog('CEERN Debugging', 'API Call ' . $method . ' ' . $uri, array(), WATCHDOG_DEBUG);
+  
+  $key = $uri . '?' . implode('&', $params);
+  
+  // Check for cache first.
+  if ($method == 'GET') {
+    if (isset($ceenclient_api_calls[$key])) {
+      return $ceenclient_api_calls[$key];
+    }
+    
+    if ($data = cache_get($key, 'cache_ceenclient')) {
+      return $data->data;
+    }
+  }
+  
   $public_key = variable_get('ceenclient_service_public_key', '');
   $private_key = variable_get('ceenclient_service_private_key', '');
   $nonce = uniqid(mt_rand());
@@ -487,7 +535,16 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
   // Automatically add .php to end of uri to ensure data comes back in expected format.
   $request = drupal_http_request($uri . '.php?' . drupal_query_string_encode($url_args), $headers, strtoupper($method), $data);
   watchdog('CEERN Debugging', 'API Return <pre>' . print_r($request, true) . '</pre>', array(), WATCHDOG_DEBUG);
-  return unserialize($request->data);
+  
+  $return_data = unserialize($request->data);
+  
+  // save to our caches.
+  if ($method == 'GET') {
+    $ceenclient_api_calls[$key] = $return_data;
+    cache_set($key, $return_data, 'cache_ceenclient', CACHE_TEMPORARY);
+  }
+  
+  return $return_data;
 }
 
 /**
@@ -516,14 +573,10 @@ function ceenclient_load_updates() {
   $max_count = variable_get('ceenclient_api_max_batch_count', 50);
   
   $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', array('status' => 1, 'sort' => 'update', 'update' => $last_update));
-  
-  //$return = "LAST UPDATE " . $last_update;
-  
   foreach ($data['resources'] as $resource) {
     switch ($resource['status']) {
       case 'PUBLISHED':
         $resource_data = ceenclient_resource_call($resource['uri']);
-        //$return .= kpr($resource_data, true);
         
         if (is_array($resource_data)) {
           if (!db_result(db_query('SELECT oid FROM {ceenapi_to_object} WHERE uuid = "%s"', $resource_data['uuid']))) {
@@ -556,8 +609,6 @@ function ceenclient_load_updates() {
       break;
     }
   }
-  
-  //return kpr($data, true) . $return;
 }
 
 /**
@@ -615,7 +666,7 @@ function ceenclient_save_to_api_action(&$object, $context = array()) {
 
 /**
  * Action for removing from api.
- * TODO: Implement ceenclient_remove_from_api_action.
+ * @TODO: Implement ceenclient_remove_from_api_action.
  */
  
 function ceenclient_remove_from_api_action(&$object, $context = array()) {
@@ -636,7 +687,7 @@ function ceenclient_save_user_to_api_action(&$object, $context = array()) {
 
 /**
  * Action for removing user from api.
- * TODO: Implement ceenclient_remove_user_from_api_action.
+ * @TODO: Implement ceenclient_remove_user_from_api_action.
  */
  
 function ceenclient_remove_user_from_api_action(&$object, $context = array()) {

@@ -35,13 +35,40 @@ function ceenclient_schema() {
       'uuid'        => array('uuid'),
     )
   );
+  
+  $schema['cache_ceenclient'] = drupal_get_schema_unprocessed('system', 'cache');
+  $schema['cache_ceenclient']['description'] = 'Cache table for return data from API calls.';
+  
   return $schema;
 }
+
+/**
+ * Implementation of hook_install().
+ */
 
 function ceenclient_install() {
   drupal_install_schema('ceenclient');
 }
 
+/**
+ * Implementation of hook_uninstall().
+ */
+
 function ceenclient_uninstall() {
   drupal_uninstall_schema('ceenclient');
+}
+
+/**
+ * Adds cache table.
+ */
+
+function ceenclient_update_6001() {
+  $ret = array();
+
+  $table = drupal_get_schema_unprocessed('system', 'cache');
+  $table['description'] = 'Cache table for views to store pre-rendered queries, results, and display output.';
+
+  db_create_table($ret, 'cache_ceenclient', $table);
+
+  return $ret;
 }
