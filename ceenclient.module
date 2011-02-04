@@ -492,7 +492,7 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
   static $ceenclient_api_calls;
   watchdog('CEERN Debugging', 'API Call ' . $method . ' ' . $uri, array(), WATCHDOG_DEBUG);
   
-  $key = $uri . '?' . implode('&', $params);
+  $key = $uri . '?' . drupal_query_string_encode($params);
   
   // Check for cache first.
   if ($method == 'GET') {
