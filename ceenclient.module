@@ -629,47 +629,6 @@ function ceenclient_load_updates() {
       }
     }
   }
-  
-  /*$last_update = variable_get('ceenclient_api_last_update', 0);
-  $max_count = variable_get('ceenclient_api_max_batch_count', 50);
-  
-  $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', array('status' => 1, 'sort' => 'update', 'update' => $last_update));
-  foreach ($data['resources'] as $resource) {
-    switch ($resource['status']) {
-      case 'PUBLISHED':
-        $resource_data = ceenclient_resource_call($resource['uri']);
-        
-        if (is_array($resource_data)) {
-          if (!db_result(db_query('SELECT oid FROM {ceenapi_to_object} WHERE uuid = "%s"', $resource_data['uuid']))) {
-            $return .= "NEW DATA";
-            $node = new stdClass();
-            $node->type = 'page';
-            module_load_include('inc', 'node', 'node.pages');
-            node_object_prepare($node);
-            $node->title = $resource_data['title'];
-            $node->ceern_from_api = TRUE;
-            node_save($node);
-            
-            db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
-          }
-        }
-        
-        variable_set('ceenclient_api_last_update', $resource['last_updated']);
-      break;
-      case 'UPDATED':
-      
-      break;
-      case 'DELETED':
-        $node = ceenclient_node_load_uuid($resource['uuid']);
-        node_delete($node->nid);
-        variable_set('ceenclient_api_last_update', $resource['last_updated']);
-      break;
-      default:
-        // TMP, just to make sure we're actually loading valid info.
-        // @TODO: Incorporate mapping and whatnot.
-      break;
-    }
-  }*/
 }
 
 /**
@@ -682,8 +641,8 @@ function ceenclient_load_updates() {
  */
 
 function ceenclient_generate_node($node_type, $resource_data) {
-  kpr('DATA');
-  kpr($resource_data);
+  //kpr('DATA');
+  //kpr($resource_data);
   $node = new stdClass();
   $node->type = $node_type->type;
   module_load_include('inc', 'node', 'node.pages');
@@ -693,11 +652,11 @@ function ceenclient_generate_node($node_type, $resource_data) {
   if (module_exists('content')) {
     $fields = content_fields(NULL, $node->type);
   }
-  kpr('FIELDS');
-  kpr($fields);
-  kpr('MAPPING');
+  //kpr('FIELDS');
+  //kpr($fields);
+  //kpr('MAPPING');
   $mapping = variable_get('ceern_mapping_' . $node_type->type, '');
-  kpr($mapping);
+  //kpr($mapping);
   foreach ($mapping as $map_key => $map_value) {
     if ($map_value != '<none>') {  
       /**
@@ -726,8 +685,8 @@ function ceenclient_generate_node($node_type, $resource_data) {
     }
   }
   
-  kpr('NODE');
-  kpr($node);
+  //kpr('NODE');
+  //kpr($node);
   
   return $node;
 }
