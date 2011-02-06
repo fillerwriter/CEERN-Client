@@ -163,6 +163,8 @@ function ceenclient_mapping_form_submit($form, &$form_state) {
   }
     
   variable_set('ceern_mapping_' . $form_state['values']['node_type'], $mapping);
+  
+  drupal_set_message('Mapping settings saved.');
 }
 
 function ceenclient_admin_settings() {
@@ -250,9 +252,16 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
     
     $form['ceern']['ceern_save_to_api'] = array(
       '#type' => 'checkbox',
-      '#title' => 'Sync with API?',
+      '#title' => t('Sync with API?'),
       '#description' => 'Should this content type be synced with the general API?',
-      '#default_value' => variable_get('ceern_save_to_api_'. $form['#node_type']->type, 0),
+      '#default_value' => variable_get('ceern_save_to_api_' . $form['#node_type']->type, 0),
+    );
+    
+    $form['ceern']['ceern_additional_parameters'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Additional Parameters'),
+      '#description' => 'Additional Search parameters. Used to filter out resources.',
+      '#default_value' => variable_get('ceern_additional_parameters_' . $form['#node_type']->type, 0),
     );
   }
   else if (preg_match('/_node_form$/', $form_id)) {
@@ -552,7 +561,7 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
  */
  
 function ceenclient_cron() {
-  ceenclient_load_updates();
+  //ceenclient_load_updates();
 }
 
 /**
@@ -564,12 +573,64 @@ function ceenclient_cron() {
 function ceenclient_load_updates() {
   /**
    * Pseudo: 
+   * - Load list of content types that need to be synced with api. 
    * - Load a value that represents last updated time.
-   * - Grab data list from API.
+   * - Grab data list from API for each content type.
    * - Run through list. Add/update/delete items as necessary.
    */
-   
-  $last_update = variable_get('ceenclient_api_last_update', 0);
+  
+  $max_count = variable_get('ceenclient_api_max_batch_count', 50);
+  
+  $node_types = node_get_types('types');
+  
+  foreach ($node_types as $node_type) {
+    if (variable_get('ceern_save_to_api_' . $node_type->type, 0) == 1) {
+      $last_update = variable_get('ceenclient_api_last_update_' . $node_type->type, 0);
+      $additional_parameters_string = variable_get('ceern_additional_parameters_' . $node_type->type, '');
+      
+      $additional_parameters_components = explode('&', $additional_parameters_string);
+      $additional_parameters = array();
+      
+      foreach($additional_parameters_components as $component) {
+        $component_parts = explode('=', $component);
+        $additional_parameters[$component_parts[0]] = $component_parts[1];
+      }
+      
+      $default_parameters = array(
+        'status' => 1, 
+        'sort' => 'update', 
+        'update' => $last_update
+      );
+      
+      $parameters = array_merge($default_parameters, $additional_parameters);
+            
+      $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $parameters);
+            
+      foreach ($data['resources'] as $resource) {
+        $resource_data = ceenclient_resource_call($resource['uri']);
+        
+        switch ($resource['status']) {
+          case 'PUBLISHED':
+            $node = ceenclient_generate_node($node_type, $resource_data);
+            //node_save($node);
+            
+            //db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
+            //variable_set('ceenclient_api_last_update_' . $node_type->type, $resource['last_updated']);
+          break;
+          case 'UPDATED':
+          
+          break;
+          case 'DELETED':
+            $node = ceenclient_node_load_uuid($resource['uuid']);
+            node_delete($node->nid);
+            variable_set('ceenclient_api_last_update_' . $node_type->type, $resource['last_updated']);
+          break;
+        }
+      }
+    }
+  }
+  
+  /*$last_update = variable_get('ceenclient_api_last_update', 0);
   $max_count = variable_get('ceenclient_api_max_batch_count', 50);
   
   $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', array('status' => 1, 'sort' => 'update', 'update' => $last_update));
@@ -608,7 +669,67 @@ function ceenclient_load_updates() {
         // @TODO: Incorporate mapping and whatnot.
       break;
     }
+  }*/
+}
+
+/**
+ * Generate a node based on mapping settings.
+ *
+ * @param $node_type
+ *   - node content type object from node_get_types().
+ * @param $resource_data
+ *   - resource data from CEERN API.
+ */
+
+function ceenclient_generate_node($node_type, $resource_data) {
+  kpr('DATA');
+  kpr($resource_data);
+  $node = new stdClass();
+  $node->type = $node_type->type;
+  module_load_include('inc', 'node', 'node.pages');
+  node_object_prepare($node);
+  
+  $fields = array();
+  if (module_exists('content')) {
+    $fields = content_fields(NULL, $node->type);
   }
+  kpr('FIELDS');
+  kpr($fields);
+  kpr('MAPPING');
+  $mapping = variable_get('ceern_mapping_' . $node_type->type, '');
+  kpr($mapping);
+  foreach ($mapping as $map_key => $map_value) {
+    if ($map_value != '<none>') {  
+      /**
+       * Check for special cases first.
+       */
+      if ($map_key == 'title' || $map_key == 'body') {
+        $node->$map_key = $resource_data[$map_value];
+      } elseif ($map_key == 'node_created') {
+        $node->created = $resource_data[$map_value];
+      } elseif (module_exists('content')) {
+        if (!empty($fields[$map_key])) {
+          /**
+           * @TODO: Add code for non-standard cck types (email, link, etc.)
+           */
+          switch ($fields[$map_key]['type']) {
+            default:
+              $node->$map_key = array(
+                0 => array(
+                  'value' => $resource_data[$map_value],
+                ),
+              );
+            break;
+          }
+        }
+      }
+    }
+  }
+  
+  kpr('NODE');
+  kpr($node);
+  
+  return $node;
 }
 
 /**
