@@ -222,8 +222,10 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
   switch ($op) {
     case 'insert':
     case 'update':
-      if (variable_get('ceern_save_to_api_'. $node->type, FALSE) != FALSE && empty($node->ceern_from_api)) {
+      if (!isset($node->from_api) && variable_get('ceern_save_to_api_'. $node->type, FALSE) != FALSE && empty($node->ceern_from_api)) {
         ceenclient_save_node($node);
+      } else {
+        watchdog('CEERN Client', 'Node from API');
       }
     break;
     case 'delete':
@@ -303,112 +305,92 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
  
 function ceenclient_save_node($node) {
   global $base_url;
-  
-  /**
-   * Initial stab at mapping. Preserve the old logic as a fallback. Once mapping is stable, leave default mapping, but drop module-specific mapping.
-   */
  
   $resource = array(
     'canonical_url' => $base_url . '/node/' . $node->nid,
     'user' => ceenclient_user_uuid($node->uid),
   );
 
-  $mapping = variable_get('ceern_mapping_' . $node->type, FALSE);
+  // Since we're storing our data in a feature, save what we can vanilla, check for other module presence, then add rest of data to object.
+  $resource = array_merge($resource, array(
+    'title' => $node->title,
+  	'description' => $node->body,
+  	'fair_usage' => TRUE, // We default to TRUE when we're not using the feature.
+  ));
 
-  if ($mapping != FALSE) {
-
-    $node_array = (array) $node;
+  if (module_exists('ygo_event') && $node->type == 'event') {
+    $resource_additions = array(
+      'type' => 'Event',
+      'time' => array(
+        'start' => $node->field_event_time[0]['value'],
+  		  'end' => $node->field_event_time[0]['value2'],
+      ),
+      'location' => array(
+  		  'name' => $node->field_event_location[0]['name'],
+  		  'street' => $node->field_event_location[0]['street'],
+  		  'additional' => $node->field_event_location[0]['additional'],
+  		  'city' => $node->field_event_location[0]['city'],
+  		  'state' => $node->field_event_location[0]['province'],
+  		  'zip' => $node->field_event_location[0]['postal_code'],
+  	  ),
+  	  'contact' => array( 
+  		  'name' => $node->field_contact_name[0]['value'],
+  		  'email' => $node->field_contact_email[0]['email'],
+  		  'url' => $node->field_contact_website[0]['url'],
+  		  'phone' => $node->field_contact_phone[0]['value'],
+  	  ),
+    );
     
-    foreach($mapping as $key => $map) {
-      if ($map != '<none>') {
-        $resource[$map] = $node_array[$key];
-      }
-    }
+    $resource = array_merge($resource, $resource_additions);
+  }
 
-    $resource['type'] = $node_array['resource_type'];
-    
-  } else {
-    // Since we're storing our data in a feature, save what we can vanilla, check for other module presence, then add rest of data to object.
-    $resource = array_merge($resource, array(
-      'title' => $node->title,
-    	'description' => $node->body,
-    	'fair_usage' => TRUE, // We default to TRUE when we're not using the feature.
-    ));
-
-    if (module_exists('ygo_event') && $node->type == 'event') {
-      $resource_additions = array(
-        'type' => 'Event',
-        'time' => array(
-          'start' => $node->field_event_time[0]['value'],
-    		  'end' => $node->field_event_time[0]['value2'],
-        ),
-        'location' => array(
-    		  'name' => $node->field_event_location[0]['name'],
-    		  'street' => $node->field_event_location[0]['street'],
-    		  'additional' => $node->field_event_location[0]['additional'],
-    		  'city' => $node->field_event_location[0]['city'],
-    		  'state' => $node->field_event_location[0]['province'],
-    		  'zip' => $node->field_event_location[0]['postal_code'],
-    	  ),
-    	  'contact' => array( 
-    		  'name' => $node->field_contact_name[0]['value'],
-    		  'email' => $node->field_contact_email[0]['email'],
-    		  'url' => $node->field_contact_website[0]['url'],
-    		  'phone' => $node->field_contact_phone[0]['value'],
-    	  ),
+  if (module_exists('ceern_resource_feature') && $node->type == 'ceen_resource') {
+    $resource_additions = array(
+  	  'type' => $node->field_resource_type[0]['value'],
+  	  'time' => array(
+  	    'start' => $node->field_time[0]['value'],
+  		  'end' => $node->field_time[0]['value2'],
+  	  ),
+  	  'prerequisites' => $node->field_prerequisites[0]['value'],
+  	  'location' => array(
+  		  'name' => $node->field_location[0]['name'],
+  		  'street' => $node->field_location[0]['street'],
+  		  'additional' => $node->field_location[0]['additional'],
+  		  'city' => $node->field_location[0]['city'],
+  		  'state' => $node->field_location[0]['province'],
+  		  'zip' => $node->field_location[0]['postal_code'],
+  	  ),
+  	  'language' => $node->field_lang[0]['value'],
+  	  'contact' => array( 
+  		  'name' => $node->field_contact_name[0]['value'],
+  		  'email' => $node->field_contact_email[0]['email'],
+  		  'url' => $node->field_contact_website[0]['url'],
+  		  'phone' => $node->field_contact_phone[0]['value'],
+  	  ),
+  	  'education_continuum' => $field_edu_continuum[0]['value'],
+  	  'fair_usage' => $node->field_fair_usage[0]['value'],
+  	);
+  	
+  	$participant_types = array();
+  	
+  	foreach($node->field_participant_type as $participant_type) {
+      $participant_types[] = $participant_type['value'];
+  	}
+  	
+  	$resource_additions['participant_type'] = $participant_types;
+  	
+  	$links = array();
+  	
+  	foreach($node->field_links as $link) {
+      $links[] = array(
+        'url' => $link['url'],
+        'title' => $link['title'],
       );
-      
-      $resource = array_merge($resource, $resource_additions);
-    }
+  	}
+  	
+  	$resource_additions['participant_type'] = $participant_types;
   
-    if (module_exists('ceern_resource_feature') && $node->type == 'ceen_resource') {
-      $resource_additions = array(
-    	  'type' => $node->field_resource_type[0]['value'],
-    	  'time' => array(
-    	    'start' => $node->field_time[0]['value'],
-    		  'end' => $node->field_time[0]['value2'],
-    	  ),
-    	  'prerequisites' => $node->field_prerequisites[0]['value'],
-    	  'location' => array(
-    		  'name' => $node->field_location[0]['name'],
-    		  'street' => $node->field_location[0]['street'],
-    		  'additional' => $node->field_location[0]['additional'],
-    		  'city' => $node->field_location[0]['city'],
-    		  'state' => $node->field_location[0]['province'],
-    		  'zip' => $node->field_location[0]['postal_code'],
-    	  ),
-    	  'language' => $node->field_lang[0]['value'],
-    	  'contact' => array( 
-    		  'name' => $node->field_contact_name[0]['value'],
-    		  'email' => $node->field_contact_email[0]['email'],
-    		  'url' => $node->field_contact_website[0]['url'],
-    		  'phone' => $node->field_contact_phone[0]['value'],
-    	  ),
-    	  'education_continuum' => $field_edu_continuum[0]['value'],
-    	  'fair_usage' => $node->field_fair_usage[0]['value'],
-    	);
-    	
-    	$participant_types = array();
-    	
-    	foreach($node->field_participant_type as $participant_type) {
-        $participant_types[] = $participant_type['value'];
-    	}
-    	
-    	$resource_additions['participant_type'] = $participant_types;
-    	
-    	$links = array();
-    	
-    	foreach($node->field_links as $link) {
-        $links[] = array(
-          'url' => $link['url'],
-          'title' => $link['title'],
-        );
-    	}
-    	
-    	$resource_additions['participant_type'] = $participant_types;
-    
-      $resource = array_merge($resource, $resource_additions);
-    }
+    $resource = array_merge($resource, $resource_additions);
   }
   
   $connection_type = 'POST';
@@ -614,9 +596,9 @@ function ceenclient_load_updates() {
         switch ($resource['status']) {
           case 'PUBLISHED':
             $node = ceenclient_generate_node($node_type, $resource_data);
-            //node_save($node);
+            node_save($node);
             
-            //db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
+            db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
             //variable_set('ceenclient_api_last_update_' . $node_type->type, $resource['last_updated']);
           break;
           case 'UPDATED':
@@ -634,7 +616,7 @@ function ceenclient_load_updates() {
 }
 
 /**
- * Generate a node based on mapping settings.
+ * Generate a node based on mapping settings. This function is used primarily on cron.
  *
  * @param $node_type
  *   - node content type object from node_get_types().
@@ -738,6 +720,7 @@ function ceenclient_generate_node($node_type, $resource_data) {
   
   kpr("NODE");
   kpr($node);
+  $node->from_api = TRUE;
   
   return $node;
 }
