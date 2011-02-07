@@ -68,6 +68,7 @@ function ceenclient_mapping_options() {
     'type' => 'Resource Type',
     'time_start' => 'Time Start',
     'time_end' => 'Time End',
+    'time' => 'Time (handles both start and end, use a date field)',
     'managing_organization' => 'Managing Organization',
     'prerequisites' => 'Prerequisites',
     'location_name' => 'Location Name',
@@ -306,23 +307,24 @@ function ceenclient_save_node($node) {
   /**
    * Initial stab at mapping. Preserve the old logic as a fallback. Once mapping is stable, leave default mapping, but drop module-specific mapping.
    */
-   
+ 
   $resource = array(
     'canonical_url' => $base_url . '/node/' . $node->nid,
     'user' => ceenclient_user_uuid($node->uid),
   );
-  
-  $mapping = variable_get('ceern_mapping_' . $node->type, false);
-  
-  if ($mapping != false) {
+
+  $mapping = variable_get('ceern_mapping_' . $node->type, FALSE);
+
+  if ($mapping != FALSE) {
+
     $node_array = (array) $node;
-        
+    
     foreach($mapping as $key => $map) {
       if ($map != '<none>') {
         $resource[$map] = $node_array[$key];
       }
     }
-    
+
     $resource['type'] = $node_array['resource_type'];
     
   } else {
@@ -332,7 +334,7 @@ function ceenclient_save_node($node) {
     	'description' => $node->body,
     	'fair_usage' => TRUE, // We default to TRUE when we're not using the feature.
     ));
-  
+
     if (module_exists('ygo_event') && $node->type == 'event') {
       $resource_additions = array(
         'type' => 'Event',
@@ -641,8 +643,8 @@ function ceenclient_load_updates() {
  */
 
 function ceenclient_generate_node($node_type, $resource_data) {
-  //kpr('DATA');
-  //kpr($resource_data);
+  kpr('DATA');
+  kpr($resource_data);
   $node = new stdClass();
   $node->type = $node_type->type;
   module_load_include('inc', 'node', 'node.pages');
@@ -652,32 +654,81 @@ function ceenclient_generate_node($node_type, $resource_data) {
   if (module_exists('content')) {
     $fields = content_fields(NULL, $node->type);
   }
-  //kpr('FIELDS');
-  //kpr($fields);
-  //kpr('MAPPING');
+  kpr('FIELDS');
+  kpr($fields);
+  kpr('MAPPING');
   $mapping = variable_get('ceern_mapping_' . $node_type->type, '');
-  //kpr($mapping);
+  kpr($mapping);
   foreach ($mapping as $map_key => $map_value) {
-    if ($map_value != '<none>') {  
+    if ($map_value != '<none>') {
+    
+      /**
+       * Load data. Since it's not a flat array, we need to ensure we're pointing to
+       * the right data source.
+       */
+       
+      $resource_datum = NULL;
+      
+      if (isset($resource_data[$map_value])) {
+        $resource_datum = $resource_data[$map_value];
+      } elseif (strpos($map_value, 'contact') !== FALSE) {
+        $key = str_replace('contact_', '', $map_value);
+        kpr("KEY");
+        kpr($key);
+        $resource_datum = $resource_data['contact'][$key];
+      } elseif (strpos($map_value, 'location') !== FALSE) {
+        $key = str_replace('location_', '', $map_value);
+        $resource_datum = $resource_data['location'][$key];
+      }
+      
       /**
        * Check for special cases first.
        */
       if ($map_key == 'title' || $map_key == 'body') {
-        $node->$map_key = $resource_data[$map_value];
+        $node->$map_key = $resource_datum;
       } elseif ($map_key == 'node_created') {
-        $node->created = $resource_data[$map_value];
+        $node->created = $resource_datum;
       } elseif (module_exists('content')) {
         if (!empty($fields[$map_key])) {
-          /**
-           * @TODO: Add code for non-standard cck types (email, link, etc.)
-           */
           switch ($fields[$map_key]['type']) {
-            default:
+            case 'email':
               $node->$map_key = array(
                 0 => array(
-                  'value' => $resource_data[$map_value],
+                  'email' => $resource_datum,
                 ),
               );
+            break;
+            case 'link':
+              $node->$map_key = array(
+                0 => array(
+                  'url' => $resource_datum,
+                ),
+              );
+            break;
+            default:
+              if ($fields[$map_key]['multiple']) {
+                // @TODO: Add support for multiple variables.
+                $node->$map_key = array();
+                
+                $values = array();
+                
+                if (is_array($resource_datum)) {
+                  $values = $resource_datum;
+                } else {
+                  // assume we're splitting on commas
+                  $values = explode(',', $resource_datum);
+                }
+                
+                foreach ($values as $value) {
+                  array_push($node->map_key, $value);
+                }
+              } else {
+                $node->$map_key = array(
+                  0 => array(
+                    'value' => $resource_datum,
+                  ),
+                );
+              }
             break;
           }
         }
@@ -685,8 +736,8 @@ function ceenclient_generate_node($node_type, $resource_data) {
     }
   }
   
-  //kpr('NODE');
-  //kpr($node);
+  kpr("NODE");
+  kpr($node);
   
   return $node;
 }
