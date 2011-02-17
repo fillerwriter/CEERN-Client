@@ -570,7 +570,8 @@ function ceenclient_load_updates() {
   
   foreach ($node_types as $node_type) {
     if (variable_get('ceern_save_to_api_' . $node_type->type, 0) == 1) {
-      $last_update = variable_get('ceenclient_api_last_update_' . $node_type->type, 0);
+      //$last_update = variable_get('ceenclient_api_last_update_' . $node_type->type, 0);
+      $last_update = 0; // for debugging
       $additional_parameters_string = variable_get('ceern_additional_parameters_' . $node_type->type, '');
       
       $additional_parameters_components = explode('&', $additional_parameters_string);
@@ -596,7 +597,12 @@ function ceenclient_load_updates() {
         
         switch ($resource['status']) {
           case 'PUBLISHED':
-            $node = ceenclient_generate_node($node_type, $resource_data);
+            $node = new stdClass();
+            $node->type = $node_type->type;
+            module_load_include('inc', 'node', 'node.pages');
+            node_object_prepare($node);
+            ceenclient_resource_to_node($resource_data, $node);
+            kpr($node);
             node_save($node);
             
             db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
@@ -694,9 +700,12 @@ function _ceenclient_resource_object_map(&$resource, $node, $map_key, $map_value
 function ceenclient_resource_to_node($resource, &$node) {
   // cast resource to array first.
   $resouce = (array) $resource;
+  kpr("INITIAL DATA");
+  kpr($node);
+  kpr($resource);
 
   // make sure we're looking at an actual node.
-  if (!is_object($node) && isset($node->type)) {
+  if (is_object($node) && isset($node->type)) {
     /**
      * We have some legacy content types that we're using for
      * various projects. This will ensure we have proper mapping
@@ -819,7 +828,9 @@ function ceenclient_resource_to_node($resource, &$node) {
        */
        
       $mapping = variable_get('ceern_mapping_' . $node->type, '');
-    
+      kpr("MAPPING");
+      kpr($mapping);
+      
       $fields = array();
 
       if (module_exists('content')) {
