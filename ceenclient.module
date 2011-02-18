@@ -440,7 +440,7 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
  */
  
 function ceenclient_cron() {
-  //ceenclient_load_updates();
+  ceenclient_load_updates();
 }
 
 /**
