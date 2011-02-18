@@ -650,9 +650,6 @@ function _ceenclient_resource_object_map(&$resource, $node, $map_key, $map_value
 function ceenclient_resource_to_node($resource, &$node) {
   // cast resource to array first.
   $resouce = (array) $resource;
-  kpr("INITIAL DATA: " . $resource['title']);
-  kpr($node);
-  kpr($resource);
 
   // make sure we're looking at an actual node.
   if (is_object($node) && isset($node->type)) {
