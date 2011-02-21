@@ -29,7 +29,7 @@ function ceenclient_menu() {
     );
   }
   
-  /*$items['ceern_debugging'] = array(
+  $items['ceern_debugging'] = array(
     'title' => 'CEERN Debugging',
     'access arguments' => array('administer site configuration'),
     'page callback' => 'ceenclient_load_updates',
@@ -39,7 +39,7 @@ function ceenclient_menu() {
     'title' => 'CEERN Sanity Check',
     'access arguments' => array('administer site configuration'),
     'page callback' => 'ceenclient_sanity_check',
-  );*/
+  );
       
   return $items;
 }
@@ -89,6 +89,7 @@ function ceenclient_mapping_options() {
     'title' => 'Title',
     'description' => 'Description',
     'type' => 'Resource Type',
+    'type_tid' => 'Resource Type ID',
     'time_start' => 'Time Start',
     'time_end' => 'Time End',
     'time' => 'Time (handles both start and end, use a date field)',
@@ -867,7 +868,9 @@ function ceenclient_resource_to_node($resource, &$node) {
                   } else {
                     $value = $resource_datum;
                     
-                    if (is_array($value)) {
+                    if ($map_value == 'type') {
+                      $value = $value['name']; 
+                    } elseif (is_array($value)) {
                       $value = implode(',', $value);
                     }
                     $node->$map_key = array(
@@ -972,11 +975,19 @@ function ceenclient_generate_node($node_type, $resource_data) {
                   array_push($node->map_key, $value);
                 }
               } else {
-                $node->$map_key = array(
-                  0 => array(
-                    'value' => $resource_datum,
-                  ),
-                );
+                if ($map_value == 'type') {
+                  $node->$map_key = array(
+                    0 => array(
+                      'value' => $resource_datum['name'],
+                    ),
+                  );
+                } else {
+                  $node->$map_key = array(
+                    0 => array(
+                      'value' => $resource_datum,
+                    ),
+                  );
+                }
               }
             break;
           }
