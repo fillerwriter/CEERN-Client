@@ -1,11 +1,22 @@
 <?php
 
+define('CEEN_MAPPING_INCOMING', 'incoming');
+
+define('CEEN_MAPPING_OUTGOING', 'outgoing');
+
 /**
  * Implements hook_menu()
  */
 
 function ceenclient_menu() {
   $items = array();
+  
+  $items['ceen'] = array(
+    'title'             => 'CEEN',
+    'description'       => 'Test',
+    'access arguments'  => array('administer site configuration'),
+    'page callback' => 'ceenclient_ceen',
+  );
   
   $items['admin/settings/ceen'] = array(
     'title'             => 'CEERN Credentials',
@@ -28,29 +39,51 @@ function ceenclient_menu() {
       'weight' => 10,
     );
   }
-  
-  $items['ceern_debugging'] = array(
-    'title' => 'CEERN Debugging',
-    'access arguments' => array('administer site configuration'),
-    'page callback' => 'ceenclient_load_updates',
-  );
-  
-  $items['ceern_sanity_check'] = array(
-    'title' => 'CEERN Sanity Check',
-    'access arguments' => array('administer site configuration'),
-    'page callback' => 'ceenclient_sanity_check',
-  );
       
   return $items;
 }
 
-function ceenclient_sanity_check() {
-  $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource');
-  kpr($data);
-  
-  foreach ($data['resources'] as $resource) {
-    kpr(ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource/' . $resource['uuid']));
+function ceenclient_ceen() {
+  ceenclient_load_updates();
+}
+
+/**
+ * Loads mapper info from various modules.
+ */
+
+function ceenclient_load_mapper_info() {
+  $mappers = array();
+  foreach (module_implements('ceen_mapping') as $module) {
+    $function = $module . '_ceen_mapping';
+    $data = $function();
+    
+    foreach ($data as $key => $value) {
+      $mappers[$key] = $value;
+    }
   }
+  
+  return $mappers;
+}
+
+/**
+ * Implements hook_ceen_mapping().
+ */
+ 
+function ceenclient_ceen_mapping() {
+  return array(
+    'CeenIncomingDefault' => array(
+      'name' => 'Default',
+      'file' => 'IncomingDefault.inc',
+      'path' => drupal_get_path('module', 'ceenclient') . '/includes',
+      'direction' => CEEN_MAPPING_INCOMING,
+    ),
+    'CeenOutgoingDefault' => array(
+      'name' => 'Default',
+      'file' => 'OutgoingDefault.inc',
+      'path' => drupal_get_path('module', 'ceenclient') . '/includes',
+      'direction' => CEEN_MAPPING_OUTGOING,
+    ),
+  );
 }
 
 /**
@@ -83,94 +116,13 @@ function ceenclient_mapping_access_callback($node_type) {
   return variable_get('ceern_save_to_api_'. $node_type, 0);
 }
 
-function ceenclient_mapping_options() {
-  return array(
-    '<none>' => '<none>',
-    'title' => 'Title',
-    'description' => 'Description',
-    'type' => 'Resource Type',
-    'type_tid' => 'Resource Type ID',
-    'time_start' => 'Time Start',
-    'time_end' => 'Time End',
-    'time' => 'Time (handles both start and end, use a date field)',
-    'managing_organization' => 'Managing Organization',
-    'prerequisites' => 'Prerequisites',
-    'location_name' => 'Location Name',
-    'location_street' => 'Location Street',
-    'location_additional' => 'Location Additional',
-    'location_city' => 'Location City',
-    'location_state' => 'Location State',
-    'location_zip' => 'Location Zip Code',
-    'location_country' => 'Location Country',
-    'language' => 'Language',
-    'contact_name' => 'Contact Name',
-    'contact_email' => 'Contact Email',
-    'contact_url' => 'Contact URL',
-    'contact_phone' => 'Contact Phone Number',
-    'education_standards' => 'Education Standards',
-    'grade_levels' => 'Grade Levels',
-    'education_continuum' => 'Education Continuum',
-    'participant_type' => 'Participant Type',
-    'links' => 'Links',
-    'files' => 'Files',
-    'canonical_url' => 'Canonical URL',
-  );
-}
-
 /**
  * Mapping form callback.
  */
  
 function ceenclient_mapping_form(&$form_state, $node_type) {  
-  $mapping = variable_get('ceern_mapping_'. $node_type, array());
+  $form = array();
   
-  $mapping_options = ceenclient_mapping_options();
-  
-  $form['map_title'] = array(
-    '#title' => 'Node Title',
-    '#type' => 'select',
-    '#options' => $mapping_options,
-    '#default_value' => isset($mapping['title']) ? $mapping['title'] : '<none>',
-  );
-  
-  $form['map_body'] = array(
-    '#title' => 'Node Body',
-    '#type' => 'select',
-    '#options' => $mapping_options,
-    '#default_value' => isset($mapping['body']) ? $mapping['body'] : '<none>',
-  );
-  
-  $form['map_node_created'] = array(
-    '#title' => 'Node Created',
-    '#type' => 'select',
-    '#options' => $mapping_options,
-    '#default_value' => isset($mapping['node_created']) ? $mapping['node_created'] : '<none>',
-  );
-  
-  if (module_exists('content')) {  
-    $node_type_data = content_types($node_type);
-    
-    foreach ($node_type_data['fields'] as $field) {
-    
-      $form['map_' . $field['field_name']] = array(
-        '#title' => t($field['widget']['label']),
-        '#type' => 'select',
-        '#options' => $mapping_options,
-        '#default_value' => (isset($mapping[$field['field_name']])) ? $mapping[$field['field_name']] : '<none>',
-      );
-    }
-  }
-  
-  $form['node_type'] = array(
-    '#type' => 'value',
-    '#value' => $node_type,
-  );
-  
-  $form['submit'] = array(
-    '#type' => 'submit',
-    '#value' => 'Submit',
-  );
-
   return $form;
 }
 
@@ -179,17 +131,6 @@ function ceenclient_mapping_form(&$form_state, $node_type) {
  */
  
 function ceenclient_mapping_form_submit($form, &$form_state) {
-  $mapping = array();
-  
-  foreach ($form_state['values'] as $key => $value) {
-    if (preg_match('/^map_/', $key)) {
-      $item_name = preg_replace('/^map_/', '', $key);
-      $mapping[$item_name] = $value;
-    }
-  }
-    
-  variable_set('ceern_mapping_' . $form_state['values']['node_type'], $mapping);
-  
   drupal_set_message('Mapping settings saved.');
 }
 
@@ -223,17 +164,9 @@ function ceenclient_admin_settings() {
  
 function ceenclient_user($op, &$edit, &$account, $category = NULL) {
   if ($op == 'insert' || $op == 'update') {
-    /**
-     * TODO: Not sure if this will work once we get content_profile involved, but for now it should.
-     */
-    $to_api = (array) $account;
-    $to_api = array_merge($to_api, $edit);
-    unset($to_api['pass']);
-    $to_api = (object) $to_api;
-    ceenclient_save_user($to_api);
-  }
-  elseif ($op == 'delete') {
-    ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/user/' . $account->ceen_uuid, NULL, 'DELETE');
+
+  } elseif ($op == 'delete') {
+
   } elseif ($op == 'load') {
     $account->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $account->uid));
   }
@@ -244,18 +177,45 @@ function ceenclient_user($op, &$edit, &$account, $category = NULL) {
  */
 
 function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
-  switch ($op) {
-    case 'insert':
-    case 'update':
-      if (!isset($node->from_api) && variable_get('ceern_save_to_api_'. $node->type, FALSE) != FALSE && empty($node->ceern_from_api)) {
-        //ceenclient_save_node($node);
-      } else {
-
-      }
-    break;
-    case 'delete':
-    
-    break;
+  if (variable_get('ceen_save_to_api_' . $node->type, FALSE)) {
+    $is_new = FALSE;
+    switch ($op) {
+      case 'load':
+        $node->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d && object = "node"', $node->nid));
+      break;
+      case 'insert':
+        $is_new = TRUE;
+        // intentional dropthrough.
+      case 'update':
+        if (!isset($node->ceen_from_api)) {
+          // Include mapping classes.
+          $map_class = variable_get('ceenclient_outgoing_' . $node->type, '');
+          
+          // include base file first.
+          include_once('./' . drupal_get_path('module', 'ceenclient') . '/includes/CeenProcess.inc');
+          $mappers = ceenclient_load_mapper_info();
+          include_once('./' . $mappers[$map_class]['path'] . '/' . $mappers[$map_class]['file']);
+          
+          $mapper = new $map_class();
+          $resource = array();
+          
+          $mapper->process($node, $resource);
+          
+          $resource_call_type = 'PUT';
+          if ($is_new) {
+            $resource_call_type = 'POST';
+          }
+          
+          ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $resource, $resource_call_type);
+        }
+      break;
+      case 'delete':
+        if (!isset($node->ceen_from_api)) {
+          ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource/' . $node->ceen_uuid, 'DELETE');
+          db_query('DELETE FROM {ceenapi_to_object} WHERE oid = %d && object = "node" LIMIT 1', $node->nid);
+        }
+      break;
+    }
   }
 }
 
@@ -269,99 +229,65 @@ function ceenclient_views_api() {
 
 /**
  * Implementation of hook_form_alter().
+ *
+ * Handles adjustment to node type form for ConEd integration.
  */
 function ceenclient_form_alter(&$form, $form_state, $form_id) {
   if ($form_id == 'node_type_form' && isset($form['identity']['type'])) {
     // Content type form.
-    $form['ceern'] = array(
+    $form['ceen'] = array(
       '#type' => 'fieldset',
       '#title' =>'ConEd API Integration',
     ); 
     
-    $form['ceern']['ceern_save_to_api'] = array(
+    $form['ceen']['ceen_save_to_api'] = array(
       '#type' => 'checkbox',
       '#title' => t('Sync with API?'),
       '#description' => 'Should this content type be synced with the general API?',
-      '#default_value' => variable_get('ceern_save_to_api_' . $form['#node_type']->type, 0),
+      '#default_value' => variable_get('ceen_save_to_api_' . $form['#node_type']->type, 0),
     );
     
-    $form['ceern']['ceern_additional_parameters'] = array(
+    $form['ceen']['ceen_additional_parameters'] = array(
       '#type' => 'textfield',
       '#title' => t('Additional Parameters'),
       '#description' => 'Additional Search parameters. Used to filter out resources.',
-      '#default_value' => variable_get('ceern_additional_parameters_' . $form['#node_type']->type, 0),
+      '#default_value' => variable_get('ceen_additional_parameters_' . $form['#node_type']->type, ''),
+    );
+    
+    $incoming_options = $outgoing_options = array(
+      '' => '<none>',
+    );
+    
+    $mappers = ceenclient_load_mapper_info();
+    
+    foreach ($mappers as $key => $map) {
+      if ($map['direction'] == CEEN_MAPPING_INCOMING) {
+        $incoming_options[$key] = $map['name'];      
+      } elseif ($map['direction'] == CEEN_MAPPING_OUTGOING) {
+        $outgoing_options[$key] = $map['name'];
+      }
+    }
+    
+    $form['ceen']['ceenclient_incoming'] = array(
+      '#type' => 'select',
+      '#title' => t('Incoming'),
+      '#options' => $incoming_options,
+      '#default_value' => variable_get('ceenclient_incoming_' . $form['#node_type']->type, 'CeenIncomingDefault'),
+    );
+    
+    $form['ceen']['ceenclient_outgoing'] = array(
+      '#type' => 'select',
+      '#title' => t('Outgoing'),
+      '#options' => $outgoing_options,
+      '#default_value' => variable_get('ceenclient_outgoing_' . $form['#node_type']->type, 'CeenOutgoingDefault'),
     );
   }
   else if (preg_match('/_node_form$/', $form_id)) {
-    if (variable_get('ceern_save_to_api_'. $form['#node']->type, FALSE)) {
-      $form['ceern_type'] = array(
-        '#type' => 'fieldset',
-        '#title' => t('CEERN'),
-        '#collapsible' => TRUE,
-      );
-      
-      $resource_types_raw = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource_types');
-      $resource_types = array();
-      foreach($resource_types_raw as $key => $major_group) {
-        $set = array();
-        foreach($major_group['children'] as $key_2 => $minor_group) {
-          $set[$minor_group['name']] = $minor_group['name'];
-        }
-        $resource_types[$major_group['name']] = $set;
-      }
-      
-      // @TODO: Save the resource type to our database.
-      $form['ceern_type']['resource_type'] = array(
-        '#type' => 'select',
-        '#title' => t('Resource Type'),
-        '#options' => $resource_types,
-      );
+    if (variable_get('ceen_save_to_api_'. $form['#node']->type, FALSE)) {
+      /**
+       * @TODO: Do we want to handle resource types as a custom field on our own, or just rely on CCK?
+       */
     }
-  }
-}
-
-/**
- * Takes a user, saves it to API.
- *
- * @param $account
- *   User account object.
- */
- 
-function ceenclient_save_user($account) {
-  /**
-   * TODO: Use Content Profile for extra data about our users.
-   */
-  $api_user_object = array(
-    'first_name' => $account->name,
-    'last_name' => " ",
-    'contact' => array(
-      'mail' => $account->mail,
-    ), 
-  );
-  
-  $resource_url = '/user';
-  $resource_call_type = 'POST';
-    
-  if ($account->ceen_uuid) {
-    $resource_url .= "/" . $account->ceen_uuid;
-    $resource_call_type = 'PUT';
-  }
-  
-  $return = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . $resource_url, $api_user_object, $resource_call_type);
-  
-  if (!$return) {
-    drupal_set_message(t("Error saving user to CEERN API"), 'error');
-  } else {
-    $update = array();
-  
-    $ceen_data = array('oid' => $account->uid, 'object' => 'user', 'uuid' => $return->uuid);
-  
-    if ($account->ceen_uuid != NULL) {
-      $update = 'oid';
-      unset($ceen_data['oid']);
-    }
-    
-    drupal_write_record('ceenapi_to_object', $ceen_data, $update);
   }
 }
 
@@ -441,7 +367,55 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
  */
  
 function ceenclient_cron() {
-  ceenclient_load_updates();
+  /**
+   * @TODO: Load content from API.
+   */
+   ceen_load_updates();
+}
+
+/**
+ * Takes a user, saves it to API.
+ *
+ * @param $account
+ *   User account object.
+ */
+ 
+function ceenclient_save_user($account) {
+  /**
+   * @TODO: Use Content Profile for extra data about our users.
+   */
+  $api_user_object = array(
+    'first_name' => $account->name,
+    'last_name' => " ",
+    'contact' => array(
+      'mail' => $account->mail,
+    ), 
+  );
+  
+  $resource_url = '/user';
+  $resource_call_type = 'POST';
+    
+  if ($account->ceen_uuid) {
+    $resource_url .= "/" . $account->ceen_uuid;
+    $resource_call_type = 'PUT';
+  }
+  
+  $return = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . $resource_url, $api_user_object, $resource_call_type);
+  
+  if (!$return) {
+    drupal_set_message(t("Error saving user to CEERN API"), 'error');
+  } else {
+    $update = array();
+  
+    $ceen_data = array('oid' => $account->uid, 'object' => 'user', 'uuid' => $return->uuid);
+  
+    if ($account->ceen_uuid != NULL) {
+      $update = 'oid';
+      unset($ceen_data['oid']);
+    }
+    
+    drupal_write_record('ceenapi_to_object', $ceen_data, $update);
+  }
 }
 
 /**
@@ -464,9 +438,19 @@ function ceenclient_load_updates() {
   $node_types = node_get_types('types');
   
   foreach ($node_types as $node_type) {
-    if (variable_get('ceern_save_to_api_' . $node_type->type, 0) == 1) {
+    if (variable_get('ceen_save_to_api_' . $node_type->type, 0) == 1) {
+      // Include mapping classes.
+      $map_class = variable_get('ceenclient_incoming_' . $node_type->type, '');
+      
+      // include base file first.
+      include_once('./' . drupal_get_path('module', 'ceenclient') . '/includes/CeenProcess.inc');
+      $mappers = ceenclient_load_mapper_info();
+      include_once('./' . $mappers[$map_class]['path'] . '/' . $mappers[$map_class]['file']);
+      
+      $mapper = new $map_class();
+    
       $last_update = variable_get('ceenclient_api_last_update_' . $node_type->type, 0);
-      $additional_parameters_string = variable_get('ceern_additional_parameters_' . $node_type->type, '');
+      $additional_parameters_string = variable_get('ceen_additional_parameters_' . $node_type->type, '');
       
       $additional_parameters_components = explode('&', $additional_parameters_string);
       $additional_parameters = array();
@@ -479,7 +463,7 @@ function ceenclient_load_updates() {
       $default_parameters = array(
         'status' => 1, 
         'sort' => 'update', 
-        'update' => $last_update
+        'update' => $last_update,
       );
       
       $parameters = array_merge($default_parameters, $additional_parameters);
@@ -489,20 +473,32 @@ function ceenclient_load_updates() {
       foreach ($data['resources'] as $resource) {
         $resource_data = ceenclient_resource_call($resource['uri']);
         
+        $is_new = FALSE;
+        $node = new stdClass();
+        
         switch ($resource['status']) {
           case 'PUBLISHED':
-            $node = new stdClass();
             $node->type = $node_type->type;
             module_load_include('inc', 'node', 'node.pages');
             node_object_prepare($node);
-            ceenclient_resource_to_node($resource_data, $node);
+                        
+            $is_new = TRUE;
+            
+          // Intentional dropthrough.
+          case 'UPDATED':
+            if (!$is_new) {
+              $node = ceenclient_node_load_uuid($resource['uuid']);
+            }
+            
+            $mapper->process($resource_data, $node);
+            $node->ceen_from_api = TRUE; // To keep an endless loop from happening in hook_api.
             node_save($node);
             
-            db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
+            if ($is_new) {
+              db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
+            }
+                        
             variable_set('ceenclient_api_last_update_' . $node_type->type, $resource['last_updated']);
-          break;
-          case 'UPDATED':
-          
           break;
           case 'DELETED':
             $node = ceenclient_node_load_uuid($resource['uuid']);
@@ -637,452 +633,6 @@ function _ceenclient_resource_object_map(&$resource, $node, $map_key, $map_value
   } else {
     $resource[$map_value] = $node->$map_key;
   }
-}
-
-/**
- * Converts a resource array into a node.
- *
- * @param $resource
- *   - 
- * @param &$node
- *   -
- */
- 
-function ceenclient_resource_to_node($resource, &$node) {
-  // cast resource to array first.
-  $resouce = (array) $resource;
-
-  // make sure we're looking at an actual node.
-  if (is_object($node) && isset($node->type)) {
-    /**
-     * We have some legacy content types that we're using for
-     * various projects. This will ensure we have proper mapping
-     * for both our custom maps and the legacy content. We should 
-     * remove them once mapping is fully working.
-     */
-  
-    if (module_exists('ygo_event') && $node->type == 'event') {
-      $node->title = $resource['title'];
-      $node->body = $resource['description'];
-      $node->field_event_time = array(
-        0 => array(
-          'value' => $resource['time']['start'],
-          'value2' => $resource['time']['end'],
-        ),
-      );
-      $node->field_event_location = array(
-        0 => array(
-          'name' => $resource['location']['name'],
-          'street' => $resource['location']['street'],
-          'additional' => $resource['location']['additional'],
-          'city' => $resource['location']['city'],
-          'providence' => $resource['location']['state'],
-          'postal_code' => $resource['location']['zip'],
-        ),
-      );
-      $node->field_contact_name = array(
-        0 => array(
-          'value' => $resource['contact']['name'],
-        ),
-      );
-      $node->field_contact_email = array(
-        0 => array(
-          'email' => $resource['contact']['email'],
-        ),
-      );
-      $node->field_contact_website = array(
-        0 => array(
-          'url' => $resource['contact']['url'],
-        ),
-      );
-      $node->field_contact_phone = array(
-        0 => array(
-          'value' => $resource['contact']['phone'],
-        ),
-      );
-      
-      return $node;  
-    
-    } elseif (module_exists('ceern_resource_feature') && $node->type == 'ceen_resource') {
-    
-      $node->title = $resource['title'];
-      $node->body = $resource['description'];
-      $node->field_resource_type = array(
-        0 => array(
-          'value' => $resource['type'],
-        ),
-      );
-      $node->field_time = array(
-        0 => array(
-          'value' => $resource['time']['start'],
-          'value2' => $resource['time']['end'],
-        ),
-      );
-      $node->field_prerequisites = array(
-        0 => array(
-          'value' => $resource['prerequisites'],
-        ),
-      );
-      $node->field_location = array(
-        0 => array(
-          'name' => $resource['location']['name'],
-          'street' => $resource['location']['street'],
-          'additional' => $resource['location']['additional'],
-          'city' => $resource['location']['city'],
-          'state' => $resource['location']['state'],
-          'zip' => $resource['location']['zip'],
-        ),
-      );
-      $node->field_lang = array(
-        0 => array(
-          'value' => $resource['language'],
-        ),
-      );
-      $node->field_contact_name = array(
-        0 => array(
-          'value' => $resource['contact']['name'],
-        ),
-      );
-      $node->field_contact_email = array(
-        0 => array(
-          'email' => $resource['contact']['email'],
-        ),
-      );
-      $node->field_contact_website = array(
-        0 => array(
-          'url' => $resource['contact']['url'],
-        ),
-      );
-      $node->field_contact_phone = array(
-        0 => array(
-          'value' => $resource['contact']['phone'],
-        ),
-      );
-      $node->field_edu_continuum = array(
-        0 => array(
-          'value' => $resource['education_continuum'],
-        ),
-      );
-      $node->field_fair_usage = array(
-        0 => array(
-          'value' => $resource['fair_usage'],
-        ),
-      );
-      
-      return $node;
-    } else {
-      /**
-       * Custom mapping. This will eventually be the entire function call.
-       */
-       
-      $mapping = variable_get('ceern_mapping_' . $node->type, '');
-      
-      $fields = array();
-
-      if (module_exists('content')) {
-        $fields = content_fields(NULL, $node->type);
-      }      
-   
-      foreach ($mapping as $map_key => $map_value) {
-        if ($map_value != '<none>') {
-        
-          /**
-           * Load data. Since it's not a flat array, we need to ensure we're pointing to
-           * the right data source.
-           */
-           
-          $resource_datum = NULL;
-          
-          if (isset($resource[$map_value])) {
-            $resource_datum = $resource[$map_value];
-          } elseif (strpos($map_value, 'contact') !== FALSE) {
-            $key = str_replace('contact_', '', $map_value);
-            $resource_datum = $resource['contact'][$key];
-          } elseif (strpos($map_value, 'location') !== FALSE) {
-            $key = str_replace('location_', '', $map_value);
-            $resource_datum = $resource['location'][$key];
-          }
-          
-          /**
-           * Check for special cases first.
-           */
-
-          if ($map_key == 'title' || $map_key == 'body') {
-            $node->$map_key = $resource_datum;
-          } elseif ($map_key == 'node_created') {
-            $node->created = $resource_datum;
-          } elseif (module_exists('content')) {
-            if (!empty($fields[$map_key])) {
-              switch ($fields[$map_key]['type']) {
-                case 'email':
-                  $node->$map_key = array(
-                    0 => array(
-                      'email' => $resource_datum,
-                    ),
-                  );
-                break;
-                case 'link':
-                  $node->$map_key = array(
-                    0 => array(
-                      'url' => $resource_datum,
-                    ),
-                  );
-                break;
-                case 'date':
-                  $node->$map_key = array(
-                    0 => array(
-                      'start' => $resource_datum['start'],
-                      'end' => $resource_datum['end'],
-                    ),
-                  );
-                break;
-                case 'location':
-                  $node->$map_key = array(
-                    0 => array(
-                      'name' => $resource_datum['location']['name'],
-                      'street' => $resource_datum['location']['street'],
-                      'additional' => $resource_datum['location']['additional'],
-                      'city' => $resource_datum['location']['city'],
-                      'state' => $resource_datum['location']['state'],
-                      'zip' => $resource_datum['location']['zip'],
-                    ),
-                  );
-                break;
-                default:
-                  if ($fields[$map_key]['multiple']) {
-                    // @TODO: Add support for multiple variables.
-                    $node->$map_key = array();
-                    
-                    $values = array();
-                    
-                    if (is_array($resource_datum)) {
-                      $values = $resource_datum;
-                    } else {
-                      // assume we're splitting on commas
-                      $values = explode(',', $resource_datum);
-                    }
-                    
-                    foreach ($values as $value) {
-                      array_push($node->map_key, $value);
-                    }
-                  } else {
-                    $value = $resource_datum;
-                    
-                    if ($map_value == 'type') {
-                      $value = $value['name']; 
-                    } elseif (is_array($value)) {
-                      $value = implode(',', $value);
-                    }
-                    $node->$map_key = array(
-                      0 => array(
-                        'value' => $value,
-                      ),
-                    );
-                  }
-                break;
-              }
-            }
-          }
-        }
-      }
-        
-      return $node;  
-    }
-  }
-}
-
-/**
- * Generate a node based on mapping settings. This function is used primarily on cron.
- *
- * @param $node_type
- *   - node content type object from node_get_types().
- * @param $resource_data
- *   - resource data from CEERN API.
- */
-
-function ceenclient_generate_node($node_type, $resource_data) {
-  $node = new stdClass();
-  $node->type = $node_type->type;
-  module_load_include('inc', 'node', 'node.pages');
-  node_object_prepare($node);
-  
-  $fields = array();
-  if (module_exists('content')) {
-    $fields = content_fields(NULL, $node->type);
-  }
-
-  $mapping = variable_get('ceern_mapping_' . $node_type->type, '');
-
-  foreach ($mapping as $map_key => $map_value) {
-    if ($map_value != '<none>') {
-    
-      /**
-       * Load data. Since it's not a flat array, we need to ensure we're pointing to
-       * the right data source.
-       */
-       
-      $resource_datum = NULL;
-      
-      if (isset($resource_data[$map_value])) {
-        $resource_datum = $resource_data[$map_value];
-      } elseif (strpos($map_value, 'contact') !== FALSE) {
-        $key = str_replace('contact_', '', $map_value);
-        $resource_datum = $resource_data['contact'][$key];
-      } elseif (strpos($map_value, 'location') !== FALSE) {
-        $key = str_replace('location_', '', $map_value);
-        $resource_datum = $resource_data['location'][$key];
-      }
-      
-      /**
-       * Check for special cases first.
-       */
-      if ($map_key == 'title' || $map_key == 'body') {
-        $node->$map_key = $resource_datum;
-      } elseif ($map_key == 'node_created') {
-        $node->created = $resource_datum;
-      } elseif (module_exists('content')) {
-        if (!empty($fields[$map_key])) {
-          switch ($fields[$map_key]['type']) {
-            case 'email':
-              $node->$map_key = array(
-                0 => array(
-                  'email' => $resource_datum,
-                ),
-              );
-            break;
-            case 'link':
-              $node->$map_key = array(
-                0 => array(
-                  'url' => $resource_datum,
-                ),
-              );
-            break;
-            default:
-              if ($fields[$map_key]['multiple']) {
-                // @TODO: Add support for multiple variables.
-                $node->$map_key = array();
-                
-                $values = array();
-                
-                if (is_array($resource_datum)) {
-                  $values = $resource_datum;
-                } else {
-                  // assume we're splitting on commas
-                  $values = explode(',', $resource_datum);
-                }
-                
-                foreach ($values as $value) {
-                  array_push($node->map_key, $value);
-                }
-              } else {
-                if ($map_value == 'type') {
-                  $node->$map_key = array(
-                    0 => array(
-                      'value' => $resource_datum['name'],
-                    ),
-                  );
-                } else {
-                  $node->$map_key = array(
-                    0 => array(
-                      'value' => $resource_datum,
-                    ),
-                  );
-                }
-              }
-            break;
-          }
-        }
-      }
-    }
-  }
-  
-  $node->from_api = TRUE;
-  
-  return $node;
-}
-
-/**
- * Implementation of hook_action_info().
- */
- 
-function ceenclient_action_info() {
-  return array(
-    'ceenclient_save_to_api_action' => array(
-      'description' => t('Save Resource to CEERN API.'),
-      'type' => 'node',
-      'configurable' => FALSE,
-      'hooks' => array(
-        'nodeapi' => array('insert', 'update'),
-      ),
-    ),
-    'ceenclient_remove_from_api_action' => array(
-      'description' => t('Remove resources from CEERN API.'),
-      'type' => 'node',
-      'configurable' => FALSE,
-      'hooks' => array(
-        'nodeapi' => array('update', 'delete'),
-      ),
-    ),
-    'ceenclient_save_user_to_api_action' => array(
-      'description' => t('Save Users to CEERN API.'),
-      'type' => 'user',
-      'configurable' => FALSE,
-      'hooks' => array(
-        'nodeapi' => array('insert', 'update'),
-      ),
-    ),
-    'ceenclient_remove_user_from_api_action' => array(
-      'description' => t('Remove users from CEERN API.'),
-      'type' => 'user',
-      'configurable' => FALSE,
-      'hooks' => array(
-        'nodeapi' => array('update', 'delete'),
-      ),
-    ),
-  );
-}
-
-/**
- * Action for saving to api.
- * @TODO: Reimplement with new functions.
- */
- 
-function ceenclient_save_to_api_action(&$object, $context = array()) {
-  if ($object->nid) {
-    $resource = node_load($object->nid);
-    
-    //ceenclient_save_node($resource);
-  }
-}
-
-/**
- * Action for removing from api.
- * @TODO: Implement ceenclient_remove_from_api_action.
- */
- 
-function ceenclient_remove_from_api_action(&$object, $context = array()) {
-
-}
-
-/**
- * Action for saving user to api.
- */
-
-function ceenclient_save_user_to_api_action(&$object, $context = array()) {
-  if ($object->uid) {
-    $account = user_load($object->uid);
-    
-    ceenclient_save_user($account);
-  }
-}
-
-/**
- * Action for removing user from api.
- * @TODO: Implement ceenclient_remove_user_from_api_action.
- */
- 
-function ceenclient_remove_user_from_api_action(&$object, $context = array()) {
-
 }
 
 /**
