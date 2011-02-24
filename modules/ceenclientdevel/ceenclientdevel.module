@@ -1,0 +1,28 @@
+<?php
+
+/**
+ * Implements hook_menu()
+ */
+
+function ceenclientdevel_menu() {
+  $items = array();
+  
+  $items['ceern_sanity_check'] = array(
+    'title' => 'CEERN Sanity Check',
+    'access arguments' => array('administer site configuration'),
+    'page callback' => 'ceenclientdevel_sanity_check',
+  );
+      
+  return $items;
+}
+
+function
+
+function ceenclientdevel_sanity_check() {
+  $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource');
+  kpr($data);
+  
+  foreach ($data['resources'] as $resource) {
+    kpr(ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource/' . $resource['uuid']));
+  }
+}
