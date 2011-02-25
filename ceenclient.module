@@ -160,14 +160,14 @@ function ceenclient_user($op, &$edit, &$account, $category = NULL) {
   switch ($op) {
     case 'load':
       $account->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $account->uid));
-    break;
+      break;
     case 'insert':
     case 'update':
     
-    break;
+      break;
     case 'delete':
     
-    break;
+      break;
   }
 }
 
@@ -181,7 +181,7 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
     switch ($op) {
       case 'load':
         $node->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d && object = "node"', $node->nid));
-      break;
+        break;
       case 'insert':
         $is_new = TRUE;
         // intentional dropthrough.
@@ -208,13 +208,13 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
             ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $resource, $resource_call_type);          
           }
         }
-      break;
+        break;
       case 'delete':
         if (!isset($node->ceen_from_api)) {
           ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource/' . $node->ceen_uuid, array(), 'DELETE');
-          db_query('DELETE FROM {ceenapi_to_object} WHERE oid = %d && object = "node" LIMIT 1', $node->nid);
+          db_query_range('DELETE FROM {ceenapi_to_object} WHERE oid = %d && object = "node"', 0, 1, $node->nid);
         }
-      break;
+        break;
     }
   }
 }
@@ -238,7 +238,7 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
     // Content type form.
     $form['ceen'] = array(
       '#type' => 'fieldset',
-      '#title' =>'ConEd API Integration',
+      '#title' => 'ConEd API Integration',
     ); 
     
     $form['ceen']['ceen_save_to_api'] = array(
@@ -264,7 +264,8 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
     foreach ($mappers as $key => $map) {
       if ($map['direction'] == CEEN_MAPPING_INCOMING) {
         $incoming_options[$key] = $map['name'];      
-      } elseif ($map['direction'] == CEEN_MAPPING_OUTGOING) {
+      } 
+      elseif ($map['direction'] == CEEN_MAPPING_OUTGOING) {
         $outgoing_options[$key] = $map['name'];
       }
     }
@@ -283,7 +284,7 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
       '#default_value' => variable_get('ceenclient_outgoing_' . $form['#node_type']->type, 'CeenOutgoingDefault'),
     );
   }
-  else if (preg_match('/_node_form$/', $form_id)) {
+  elseif (preg_match('/_node_form$/', $form_id)) {
     if (variable_get('ceen_save_to_api_'. $form['#node']->type, FALSE)) {
       /**
        * @TODO: Do we want to handle resource types as a custom field on our own, or just rely on CCK?
@@ -306,7 +307,6 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
 
 function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
   static $ceenclient_api_calls;
-  
   
   $key = $uri . '?' . drupal_query_string_encode($params);
   
@@ -336,7 +336,8 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
   
   if (strtoupper($method) == 'GET') {
     $url_args += $params;
-  } else {
+  } 
+  else {
     $data = serialize($params);
   }
   
@@ -405,7 +406,8 @@ function ceenclient_save_user($account) {
   
   if (!$return) {
     drupal_set_message(t("Error saving user to CEERN API"), 'error');
-  } else {
+  } 
+  else {
     $update = array();
   
     $ceen_data = array('oid' => $account->uid, 'object' => 'user', 'uuid' => $return->uuid);
@@ -457,7 +459,7 @@ function ceenclient_load_updates() {
         $additional_parameters_components = explode('&', $additional_parameters_string);
         $additional_parameters = array();
         
-        foreach($additional_parameters_components as $component) {
+        foreach ($additional_parameters_components as $component) {
           $component_parts = explode('=', $component);
           $additional_parameters[$component_parts[0]] = $component_parts[1];
         }
@@ -501,12 +503,12 @@ function ceenclient_load_updates() {
               }
                           
               variable_set('ceenclient_api_last_update_' . $node_type->type, $resource['last_updated']);
-            break;
+              break;
             case 'DELETED':
               $node = ceenclient_node_load_uuid($resource['uuid']);
               node_delete($node->nid);
               variable_set('ceenclient_api_last_update_' . $node_type->type, $resource['last_updated']);
-            break;
+              break;
           }
         }      
       }
