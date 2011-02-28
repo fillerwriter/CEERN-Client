@@ -27,5 +27,5 @@ function ceenclientdevel_sanity_check() {
 
 function ceenclientdevel_ceen_resource_call($uri, $params, $method, $return_data, $datasource) {
   watchdog('CEERN Debugging', 'API Call ' . $method . ' ' . $uri . " <pre>" . print_r($params, true) . "</pre>", array(), WATCHDOG_DEBUG);
-  watchdog('CEERN Debugging', 'API Return <pre>' . print_r($request, true) . '</pre>', array(), WATCHDOG_DEBUG);
+  watchdog('CEERN Debugging', 'API Return <pre>' . print_r($return_data, true) . '</pre>', array(), WATCHDOG_DEBUG);
 }

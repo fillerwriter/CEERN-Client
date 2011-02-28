@@ -205,7 +205,19 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
               $resource_call_type = 'POST';
             }
             
-            ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $resource, $resource_call_type);          
+            if (is_callable(array($mapper, 'presave'))) {
+              $mapper->presave($node, $resource);
+            }
+            
+            $return_data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $resource, $resource_call_type);
+            
+            // keep track of it locally
+            db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $return_data['uuid']);
+            
+            if (is_callable(array($mapper, 'postsave'))) {
+              $resource = array_merge($resource, (array) $return_data);
+              $mapper->postsave($node, $resource);
+            }      
           }
         }
         break;
@@ -356,6 +368,13 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
   
   $return_data = unserialize($request->data);
   
+  if (isset($return_data['errors'])) {
+    foreach($return_data['errors'] as $error) {
+      drupal_set_message('CEEN Error: ' . $error, 'error');
+    }
+    drupal_set_message('Your changes have not been saved to the Conservation Network.', 'error');
+  }
+  
   // save to our caches.
   if ($method == 'GET') {
     $ceenclient_api_calls[$key] = $return_data;
@@ -496,7 +515,16 @@ function ceenclient_load_updates() {
               
               $mapper->process($resource_data, $node);
               $node->ceen_from_api = TRUE; // To keep an endless loop from happening in hook_api.
+              
+              if (is_callable(array($mapper, 'presave'))) {
+                $mapper->presave($resource_data, $node);
+              }
+              
               node_save($node);
+              
+              if (is_callable(array($mapper, 'postsave'))) {
+                $map->postsave($resource_data, $node);
+              }
               
               if ($is_new) {
                 db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $resource_data['uuid']);
