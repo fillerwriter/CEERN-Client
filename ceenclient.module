@@ -40,15 +40,21 @@ function ceenclient_menu() {
 
 function ceenclient_load_mapper_info() {
   $mappers = array();
+  
   foreach (module_implements('ceen_mapping') as $module) {
     $function = $module . '_ceen_mapping';
     $data = $function();
     
+    $defaults = array(
+      'path' => drupal_get_path('module', $module) . '/includes',
+      'direction' => CEEN_MAPPING_INCOMING,
+      'object' => 'node',      
+    );
+    
     foreach ($data as $key => $value) {
-      $mappers[$key] = $value;
+      $mappers[$key] = array_merge($defaults, $value);
     }
   }
-  
   return $mappers;
 }
 
@@ -63,12 +69,21 @@ function ceenclient_ceen_mapping() {
       'file' => 'IncomingDefault.inc',
       'path' => drupal_get_path('module', 'ceenclient') . '/includes',
       'direction' => CEEN_MAPPING_INCOMING,
+      'object' => 'node',
     ),
     'CeenOutgoingDefault' => array(
       'name' => 'Default',
       'file' => 'OutgoingDefault.inc',
       'path' => drupal_get_path('module', 'ceenclient') . '/includes',
       'direction' => CEEN_MAPPING_OUTGOING,
+      'object' => 'node',
+    ),
+    'CeenOutgoingUserDefault' => array(
+      'name' => 'Default',
+      'file' => 'OutgoingUserDefault.inc',
+      'path' => drupal_get_path('module', 'ceenclient') . '/includes',
+      'direction' => CEEN_MAPPING_OUTGOING,
+      'object' => 'user',
     ),
   );
 }
@@ -91,14 +106,6 @@ function ceenclient_menu_alter(&$form) {
 
 function ceenclient_flush_caches() {
   return array('cache_ceenclient');
-}
-
-/**
- * Submit handler for mapping form.
- */
- 
-function ceenclient_mapping_form_submit($form, &$form_state) {
-  drupal_set_message('Mapping settings saved.');
 }
 
 /**
@@ -126,7 +133,7 @@ function ceenclient_admin_settings() {
     '#default_value' => variable_get('ceenclient_service_private_key', ''),
   );
   
-  $me = ceenclient_resource_call(variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/source/me');
+  $me = ceenclient_resource_call(variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/source/me', array(), 'GET', TRUE);
   
   if (!empty($me)) {
     $table_data = array(
@@ -157,17 +164,49 @@ function ceenclient_credential_status_ajax() {
  */
  
 function ceenclient_user($op, &$edit, &$account, $category = NULL) {
-  switch ($op) {
-    case 'load':
-      $account->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $account->uid));
-      break;
-    case 'insert':
-    case 'update':
-    
-      break;
-    case 'delete':
-    
-      break;
+  if (variable_get('ceen_save_to_api_user', 0)) {
+    $is_new = FALSE;
+    switch ($op) {
+      case 'load':
+        $account->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $account->uid));
+        break;
+      case 'insert':
+        $is_new = TRUE;
+        // intentional fallthrough.
+      case 'update':
+        if ($input_mapper = _ceenclient_mapper_factory(variable_get('ceenclient_outgoing_user', 'CeenOutgoingUserDefault'))) {
+          $resource = array();
+          $input_mapper->process($account, $resource);
+          
+          $resource_call_type = 'POST';
+          $resource_call_uri = variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/user';
+          if (!$is_new) {
+            $resource_call_type = 'PUT';
+            $resource_call_uri .= '/' . $account->ceen_uuid;
+          }
+          
+          if (is_callable(array($input_mapper, 'presave'))) {
+            $mapper->presave($account, $resource);
+          }
+          
+          $return_data = ceenclient_resource_call($resource_call_uri, $resource, $resource_call_type);
+          
+          // keep track of it locally
+          db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "user", "%s")', $account->uid, $return_data['uuid']);
+          
+          if (is_callable(array($input_mapper, 'postsave'))) {
+            $resource = array_merge($resource, (array) $return_data);
+            $mapper->postsave($input_mapper, $resource);
+          }
+        }
+        break;
+      case 'delete':
+        if (!isset($account->ceen_from_api)) {
+          ceenclient_resource_call(variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/user/' . $account->ceen_uuid, array(), 'DELETE');
+          db_query('DELETE FROM {ceenapi_to_object} WHERE oid = %d && object = "user"', $account->uid);
+        }
+        break;
+    }
   }
 }
 
@@ -196,20 +235,27 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
             include_once('./' . $mappers[$map_class]['path'] . '/' . $mappers[$map_class]['file']);
             
             $mapper = new $map_class();
+            
+            if (empty($node->ceen_uuid)) {
+              $is_new = TRUE;
+            }
+            
             $resource = array();
             
             $mapper->process($node, $resource);
             
-            $resource_call_type = 'PUT';
-            if ($is_new) {
-              $resource_call_type = 'POST';
+            $resource_call_type = 'POST';
+            $resource_call_uri = variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/resource';
+            if (!$is_new) {
+              $resource_call_type = 'PUT';
+              $resource_call_uri .= '/' . $node->ceen_uuid;
             }
             
             if (is_callable(array($mapper, 'presave'))) {
               $mapper->presave($node, $resource);
             }
             
-            $return_data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $resource, $resource_call_type);
+            $return_data = ceenclient_resource_call($resource_call_uri, $resource, $resource_call_type);
             
             // keep track of it locally
             db_query('INSERT INTO {ceenapi_to_object} (oid, object, uuid) VALUES (%d, "node", "%s")', $node->nid, $return_data['uuid']);
@@ -223,8 +269,8 @@ function ceenclient_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
         break;
       case 'delete':
         if (!isset($node->ceen_from_api)) {
-          ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource/' . $node->ceen_uuid, array(), 'DELETE');
-          db_query_range('DELETE FROM {ceenapi_to_object} WHERE oid = %d && object = "node"', 0, 1, $node->nid);
+          ceenclient_resource_call(variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/resource/' . $node->ceen_uuid, array(), 'DELETE');
+          db_query('DELETE FROM {ceenapi_to_object} WHERE oid = %d && object = "node"', $node->nid);
         }
         break;
     }
@@ -274,7 +320,10 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
     $mappers = ceenclient_load_mapper_info();
     
     foreach ($mappers as $key => $map) {
-      if ($map['direction'] == CEEN_MAPPING_INCOMING) {
+      if ($map['object'] != 'node') {
+        // Do nothing.
+      }
+      elseif ($map['direction'] == CEEN_MAPPING_INCOMING) {
         $incoming_options[$key] = $map['name'];      
       } 
       elseif ($map['direction'] == CEEN_MAPPING_OUTGOING) {
@@ -303,6 +352,57 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
        */
     }
   }
+  elseif ($form_id == 'user_admin_settings') {
+    // @TODO: Add variable here for saving users.
+    $form['buttons']['#weight'] = 50;
+    $form['ceen'] = array(
+      '#type' => 'fieldset',
+      '#title' => 'ConEd API Integration',
+      '#weight' => 20,
+    ); 
+    
+    $form['ceen']['ceen_save_to_api_user'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Sync with API?'),
+      '#description' => 'Should users be synced with the general API?',
+      '#default_value' => variable_get('ceen_save_to_api_user', 0),
+    );
+    
+    $incoming_options = $outgoing_options = array(
+      '' => '<none>',
+    );
+    
+    $mappers = ceenclient_load_mapper_info();
+    
+    foreach ($mappers as $key => $map) {
+      if ($map['object'] != 'user') {
+        // Do nothing.
+      }
+      elseif ($map['direction'] == CEEN_MAPPING_INCOMING) {
+        $incoming_options[$key] = $map['name'];      
+      } 
+      elseif ($map['direction'] == CEEN_MAPPING_OUTGOING) {
+        $outgoing_options[$key] = $map['name'];
+      }
+    }
+    
+    kpr($incoming_options);
+    kpr($outgoing_options);
+    
+    $form['ceen']['ceenclient_incoming_user'] = array(
+      '#type' => 'select',
+      '#title' => t('Incoming'),
+      '#options' => $incoming_options,
+      '#default_value' => variable_get('ceenclient_incoming_user', 'CeenIncomingUserDefault'),
+    );
+    
+    $form['ceen']['ceenclient_outgoing_user'] = array(
+      '#type' => 'select',
+      '#title' => t('Outgoing'),
+      '#options' => $outgoing_options,
+      '#default_value' => variable_get('ceenclient_outgoing_user', 'CeenOutgoingUserDefault'),
+    );
+  }
 }
 
 /**
@@ -317,21 +417,23 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
  *   A data object from CEEN.
  */
 
-function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
+function ceenclient_resource_call($uri, $params = array(), $method = 'GET', $clearcache = FALSE) {
   static $ceenclient_api_calls;
   
   $key = $uri . '?' . drupal_query_string_encode($params);
   
   // Check for cache first.
   if ($method == 'GET') {
-    if (isset($ceenclient_api_calls[$key])) {
-      module_invoke_all('ceen_resource_call', $uri, $params, $method, $ceenclient_api_calls[$key], CEENCLIENT_FROM_CACHE);
-      return $ceenclient_api_calls[$key];
-    }
-    
-    if ($data = cache_get($key, 'cache_ceenclient')) {
-      module_invoke_all('ceen_resource_call', $uri, $params, $method, $data->data, CEENCLIENT_FROM_CACHE);
-      return $data->data;
+    if (!$clearcache) {
+      if (isset($ceenclient_api_calls[$key])) {
+        module_invoke_all('ceen_resource_call', $uri, $params, $method, $ceenclient_api_calls[$key], CEENCLIENT_FROM_CACHE);
+        return $ceenclient_api_calls[$key];
+      }
+      
+      if ($data = cache_get($key, 'cache_ceenclient')) {
+        module_invoke_all('ceen_resource_call', $uri, $params, $method, $data->data, CEENCLIENT_FROM_CACHE);
+        return $data->data;
+      }
     }
   }
   
@@ -366,7 +468,7 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
   // Automatically add .php to end of uri to ensure data comes back in expected format.
   $request = drupal_http_request($uri . '.php?' . drupal_query_string_encode($url_args), $headers, strtoupper($method), $data);
   
-  $return_data = unserialize($request->data);
+  $return_data = (array) unserialize($request->data);
   
   if (isset($return_data['errors'])) {
     foreach($return_data['errors'] as $error) {
@@ -392,52 +494,6 @@ function ceenclient_resource_call($uri, $params = array(), $method = 'GET') {
  
 function ceenclient_cron() {
    ceenclient_load_updates();
-}
-
-/**
- * Takes a user, saves it to API.
- *
- * @param $account
- *   User account object.
- */
- 
-function ceenclient_save_user($account) {
-  /**
-   * @TODO: Use Content Profile for extra data about our users.
-   */
-  $api_user_object = array(
-    'first_name' => $account->name,
-    'last_name' => " ",
-    'contact' => array(
-      'mail' => $account->mail,
-    ), 
-  );
-  
-  $resource_url = '/user';
-  $resource_call_type = 'POST';
-    
-  if ($account->ceen_uuid) {
-    $resource_url .= "/" . $account->ceen_uuid;
-    $resource_call_type = 'PUT';
-  }
-  
-  $return = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . $resource_url, $api_user_object, $resource_call_type);
-  
-  if (!$return) {
-    drupal_set_message(t("Error saving user to CEERN API"), 'error');
-  } 
-  else {
-    $update = array();
-  
-    $ceen_data = array('oid' => $account->uid, 'object' => 'user', 'uuid' => $return->uuid);
-  
-    if ($account->ceen_uuid != NULL) {
-      $update = 'oid';
-      unset($ceen_data['oid']);
-    }
-    
-    drupal_write_record('ceenapi_to_object', $ceen_data, $update);
-  }
 }
 
 /**
@@ -491,7 +547,7 @@ function ceenclient_load_updates() {
         
         $parameters = array_merge($default_parameters, $additional_parameters);
               
-        $data = ceenclient_resource_call(variable_get('ceenclient_service_url', '') . '/resource', $parameters);
+        $data = ceenclient_resource_call(variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/resource', $parameters);
               
         foreach ($data['resources'] as $resource) {
           $resource_data = ceenclient_resource_call($resource['uri']);
@@ -565,4 +621,28 @@ function ceenclient_user_uuid($uid = -1) {
 function ceenclient_node_load_uuid($uuid) {
   $nid = db_result(db_query('SELECT oid FROM {ceenapi_to_object} WHERE uuid = "%s" AND object = "node"', $uuid));
   return node_load($nid);
+}
+
+/**
+ * Mapper factory. Ensures that we have the proper files loaded and whatnot.
+ *
+ * @class
+ *   String that corresponds to a class name.
+ *
+ * @return
+ *   Mapper if found, FALSE otherwise.
+ */
+
+function _ceenclient_mapper_factory($class_name) {
+  $mappers = ceenclient_load_mapper_info();
+  if (!empty($mappers[$class_name])) {
+    // Load base class first.
+    include_once('./' . drupal_get_path('module', 'ceenclient') . '/includes/CeenProcess.inc');
+    
+    include_once('./' . $mappers[$class_name]['path'] . '/' . $mappers[$class_name]['file']);
+    return new $class_name();
+  }
+  else {
+    return FALSE;
+  }
 }

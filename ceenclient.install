@@ -56,6 +56,7 @@ function ceenclient_install() {
 
 function ceenclient_uninstall() {
   drupal_uninstall_schema('ceenclient');
+  db_query('DELETE FROM {variables} WHERE name LIKE "ceernclient_%%" || name LIKE "ceenclient_%%"');
 }
 
 /**
