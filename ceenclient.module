@@ -135,7 +135,7 @@ function ceenclient_admin_settings() {
   
   $me = ceenclient_resource_call(variable_get('ceenclient_service_url', 'http://api.resourcecommons.org/services/rest') . '/source/me', array(), 'GET', TRUE);
   
-  if (!empty($me)) {
+  if (!empty($me['uuid'])) {
     $table_data = array(
       array('Name', $me['name']),
       array('Server ID', $me['uuid']),
@@ -164,11 +164,42 @@ function ceenclient_credential_status_ajax() {
  */
  
 function ceenclient_user($op, &$edit, &$account, $category = NULL) {
-  if (variable_get('ceen_save_to_api_user', 0)) {
+  if (variable_get('ceen_save_to_api_user', 1) == 1) {
     $is_new = FALSE;
     switch ($op) {
       case 'load':
         $account->ceen_uuid = db_result(db_query('SELECT uuid FROM {ceenapi_to_object} WHERE oid = %d AND object = "user"', $account->uid));
+        break;
+      case 'form':
+        $uuid = ceenclient_user_uuid($account->uid);
+
+        $form = array();
+        $form['ceen'] = array(
+          '#type' => 'fieldset',
+          '#title' => 'Conservation and Education Resource Network',
+          '#collapsible' => TRUE,
+          '#collapsed' => (empty($uuid)) ? FALSE : TRUE,
+        );
+        
+        if (empty($uuid)) {
+          $form['ceen']['warning'] = array(
+            '#type' => 'markup',
+            '#value' => '<p>This user is not connected to the Conservation Network. Please update the user to get connected.</p>',
+          );
+          
+          $form['ceen']['warning_btn'] = array(
+            '#type' => 'submit',
+            '#value' => 'Connect to ConEd Network',
+          );
+        }
+        else {
+          $form['ceen']['stats'] = array(
+            '#type' => 'markup',
+            '#value' => '<p><strong>CEEN ID:</strong> ' . $uuid,
+          );
+        }
+        
+        return $form;
         break;
       case 'insert':
         $is_new = TRUE;
@@ -385,9 +416,6 @@ function ceenclient_form_alter(&$form, $form_state, $form_id) {
         $outgoing_options[$key] = $map['name'];
       }
     }
-    
-    kpr($incoming_options);
-    kpr($outgoing_options);
     
     $form['ceen']['ceenclient_incoming_user'] = array(
       '#type' => 'select',
