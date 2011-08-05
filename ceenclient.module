@@ -27,8 +27,24 @@ function ceenclient_menu() {
     'title'             => 'CEERN Credentials',
     'description'       => 'CEEN settings.',
     'access arguments'  => array('administer site configuration'),
+    'access arguments'  => array('administer site configuration'),
     'page callback' => 'drupal_get_form',
     'page arguments' => array('ceenclient_admin_settings'),
+  );
+  
+  $items['admin/settings/ceen/credentials'] = array(
+    'title'             => 'CEERN Credentials',
+    'description'       => 'CEEN settings.',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+  
+  $items['admin/settings/ceen/sync'] = array(
+    'title' => 'Re-sync',
+    'description' => '',
+    'type' => MENU_LOCAL_TASK,
+    'access arguments' => array('administer site configuration'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ceenclient_admin_resync'),
   );
       
   return $items;
@@ -148,6 +164,43 @@ function ceenclient_admin_settings() {
   }
   
   return system_settings_form($form);
+}
+
+function ceenclient_admin_resync() {
+  $form = array();
+  
+  $form['help_text'] = array(
+    '#type' => 'markup',
+    '#value' => '<p>Test</p>',
+  );
+  
+  $form['api_to_local'] = array(
+    '#type' => 'submit',
+    '#value' => 'Pull From API',
+  );
+  
+  $form['local_to_api'] = array(
+    '#type' => 'submit',
+    '#value' => 'Push Local Changes',
+  );
+  
+  return $form;
+}
+
+/**
+ * Depending on the button pushed, we either push existing resources out to the api, or pull resources back in.
+ */
+
+function ceenclient_admin_resync_submit($form, &$form_state) {
+  kpr($form_state);
+  switch ($form_state['clicked_button']['#id']) {
+    case 'edit-api-to-local':
+    
+    break;
+    case 'edit-local-to-api':
+    
+    break;
+  }
 }
 
 /**
