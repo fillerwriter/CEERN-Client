@@ -192,13 +192,31 @@ function ceenclient_admin_resync() {
  */
 
 function ceenclient_admin_resync_submit($form, &$form_state) {
-  kpr($form_state);
   switch ($form_state['clicked_button']['#id']) {
     case 'edit-api-to-local':
     
     break;
     case 'edit-local-to-api':
+      if (module_exists('spaces')) {
+        // Ok, so here's the deal. If we have the spaces module enabled, then we need alter our query to only pull nodes that are part of the current space.
+        // Because spaces is capable of making a space out of lots of stuff, and I only need it for spaces/og, this only works for og integration.
+        
+      }
+      else {
+        $result = db_query('SELECT * FROM {ceenapi_to_object}');  
+      }
     
+      while ($item = db_fetch_array($result)) {
+        switch ($item['object']) {
+          case 'node':
+            $node = ceenclient_node_load_uuid($item['uuid']);
+            node_save($node);
+          break;
+          case 'user':
+          
+          break;
+        }
+      }
     break;
   }
 }
